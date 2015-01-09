@@ -76,6 +76,7 @@ def parse_orientation(char):
     
 def debug_block(pos, world):
     print("----")
+    pos = map(int, pos)
     print pos, world.get_solid_block(*pixel_to_tile(pos))
     for l in world.layers.values():
         block = world.get_block(*pixel_to_tile(pos), layer=l.name)
@@ -100,7 +101,7 @@ class Rect:
     def __init__(self, *args):
         l = len(args)
         if l == 2 and isinstance(args[0], tuple): # ((,), (,))
-            self._init(args[0][0], args[0][1], args[1][0], args[1][1])
+            self._init(*self._tuple_from_arg(args))
         elif l == 4: # (,,,)
             self._init(*args)
         elif l == 1:
@@ -109,7 +110,6 @@ class Rect:
                 self._init(r.x, r.y, r.width, r.height)
             elif isinstance(r, pygame_Rect):
                 self._init(*r)
-                
         else:
             raise TypeError("Invalid argument")
             
@@ -147,10 +147,14 @@ class Rect:
     def __getitem__(self, key):
         return (self.x, self.y, self.width, self.height)[key]
         
+    def __len__(self):
+        return 4
+        
     def add_vector(self, vec2d):
         self.center = (self.center[0] + vec2d.x, self.center[1] + vec2d.y)
         
     def colliderect(self, r):
+        r = self._tuple_from_arg(r)
         return self.x + self.width > r[0] and r[0] + r[2] > self.x and self.y + self.height > r[1] and r[1] + r[3] > self.y
         
     def inflate(self, x, y):
@@ -161,6 +165,14 @@ class Rect:
         
     def to_tuple(self):
         return (self.x, self.y, self.width, self.height)
+        
+    def _tuple_from_arg(self, arg):
+        l = len(arg)
+        if l == 2:
+            return arg[0][0], arg[0][1], arg[1][0], arg[1][1]
+        elif l == 1 and isinstance(arg, Rect):
+            return arg.to_tuple()
+        else: return arg
                 
     def __str__(self):
         return "Rect{(%.1f, %.1f), (%.1f, %.1f)}" % (self.x, self.y, self.width, self.height)    
