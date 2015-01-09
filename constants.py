@@ -47,7 +47,8 @@ class GameScreen:
         :param color: Optional colour, defaults to red
         :param filled: Outlined if False
         """
-        pygame.draw.rect(self._window, color, (self.camera.apply_rect(rect), (rect.width, rect.height)), 0 if filled else 2)
+        dim = (rect[1][0], rect[1][1]) if len(rect) == 2 else (rect.width, rect.height)
+        pygame.draw.rect(self._window, color, (self.camera.apply_rect(rect), dim), 0 if filled else 2)
 
     def draw_sprite(self, sprite, loc):
         """
@@ -185,10 +186,10 @@ class Camera:
 
 # todo bring direction here too, and then import * height 
 class Speed:
-    SLOW = 60
-    MEDIUM = 100
-    FAST = 200
-    MAX = 360
+    SLOW = 80
+    MEDIUM = 120
+    FAST = 180
+    MAX = 240
     WTF_DEBUG = 800
 
     VALUES = [SLOW, MEDIUM, FAST]
@@ -205,6 +206,8 @@ class Direction:
     NORTH = 3
     
     VALUES = [SOUTH, WEST, EAST, NORTH]
+    HORIZONTALS = [WEST, EAST]
+    VERTICALS = [SOUTH, NORTH]
     
     @staticmethod
     def random():
