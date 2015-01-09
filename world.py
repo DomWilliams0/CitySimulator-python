@@ -139,12 +139,13 @@ class BaseWorld:
             self.interact_rects.append((util.tile_to_pixel((x, y)), constants.DIMENSION))
 
         if overwrite_collisions:
-            if self.layers[layer].draw_above or not BlockType.is_collidable(block.blocktype):
-                new_value = None
-            else:
-                new_value = (util.tile_to_pixel((x, y)), constants.DIMENSION)
+            if not self.layers[layer].draw_above and BlockType.is_collidable(block.blocktype):
+                offset, collision_rect = Block.HELPER.get_collision_rect(block)
+                pos = util.tile_to_pixel((x, y))
+                pos = pos[0] + offset[0], pos[1] + offset[1]
+                new_value =  pos, collision_rect
+                self.layers["rects"][y][x] = new_value
 
-            self.layers["rects"][y][x] = new_value
 
         if constants.SCREEN.camera:
             self.renderer.render_block(block, (x, y), layer)
@@ -177,13 +178,14 @@ class BaseWorld:
                         r = rect_grid[y][x]
                     except IndexError:
                         continue
+                    if r: constants.SCREEN.draw_rect(r, color=(200, 240, 200), filled=False)
                     if r and rect.colliderect(r):
                         rects.append(r)
         else:
             for interactable in self.interact_rects:
                 if rect.colliderect(interactable):
                     rects.append(interactable)
-
+        
         return rects
 
     def print_ascii(self, layer="terrain"):
@@ -194,7 +196,7 @@ class BaseWorld:
             for x in xrange(self.tile_width):
                 print(self.get_block(x, y, layer)),
             print
-
+    
     def tick_entities(self, render, boundaries=None):
         """
         Ticks all entities
@@ -202,7 +204,7 @@ class BaseWorld:
         """
         swapsies = []
         # swap entities for layering
-        # debug very intensive, need to find a better way to detect entity collisions
+        # debug very intensive, need to find a better way to detect entity collisions, quadtrees?
         # todo only those that are on screen
         for i, entity in enumerate(self.entities):
         	for j, other in enumerate(self.entities):
@@ -216,7 +218,7 @@ class BaseWorld:
         		if (i < j and entity.rect.bottomleft[1] > other.rect.bottomleft[1]) or (i > j and entity.rect.bottomleft[1] < other.rect.bottomleft[1]):
         			swapsies.append((entity, i, other, j))
         if swapsies:
-        	for e, i, o, j in swapsies:
+            for e, i, o, j in swapsies:
         		temp = self.entities[i]
         		self.entities[i] = self.entities[j]
         		self.entities[j] = temp
@@ -394,9 +396,9 @@ class BaseWorld:
             solid_blanks = world.layers[layer_name].solid_blanks
 
             # rotation flags
-            rotation = 0x01 << 29
+            """rotation = 0x01 << 29
             vertical = 0x02 << 29
-            horizontal = 0x04 << 29
+            horizontal = 0x04 << 29"""
 
             for c in data.strip().split(','):
                 # new row
@@ -412,16 +414,7 @@ class BaseWorld:
 
                     # rotated
                     if not block:
-                        rot = block_id & rotation != 0
-                        hor = block_id & horizontal != 0
-                        ver = block_id & vertical != 0
-
-                        if rot:
-                            real_id ^= rotation
-                        if hor:
-                            real_id ^= horizontal
-                        if ver:
-                            real_id ^= vertical
+                        real_id, rot, hor, ver = Block.HELPER.get_rotation(block_id)
 
                         try:
                             old_surface = Block.HELPER.block_images[real_id]
@@ -432,7 +425,6 @@ class BaseWorld:
                             raise StandardError("Unknown rotation of block id %d" % block_id)
 
                         # register rotated surface under new blockid
-                        # block = Block.HELPER.register_block(block_id, surface)
                         block = Block.HELPER.register_block(real_id, surface, render_id=block_id)
 
                     # each interactable instance must be unique
@@ -482,7 +474,7 @@ class BaseWorld:
             o = util.parse_orientation(p["orientation"])
             world.add_spawn(x, y, o,w,h)
 
-        logging.info("World loaded: [%s]" % filename)
+        logging.debug("World loaded: [%s]" % filename)
         return world
 
     def add_spawn(self, x, y, o=None, w=None, h=None):
@@ -601,6 +593,35 @@ class _BlockHelper:
         new_block = Block.clone(block)
         self.block_images[new_block.render_id] = self.block_images[block.render_id]
         return new_block
+        
+    def get_collision_rect(self, block):
+        offset = (0, 0)
+        rect = constants.DIMENSION
+        blockid, rot, hor, ver = self.get_rotation(block.render_id)
+        if blockid == BlockType.BUILDING_EDGE:
+            rect = int(rect[0] * 0.8), rect[1]
+            if not hor:
+                offset = (int(rect[0] * 0.2) + 1, 0)
+            
+        return offset, rect
+        
+    def get_rotation(self, block_id):
+        rotation = 0x01 << 29
+        vertical = 0x02 << 29
+        horizontal = 0x04 << 29
+
+        rot = block_id & rotation != 0
+        hor = block_id & horizontal != 0
+        ver = block_id & vertical != 0
+        real_id = block_id
+
+        if rot:
+            real_id ^= rotation
+        if hor:
+            real_id ^= horizontal
+        if ver:
+            real_id ^= vertical
+        return real_id, rot, hor, ver
 
 
 class BlockType:

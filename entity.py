@@ -30,7 +30,7 @@ class Entity(Sprite):
         self.image = Surface(dimensions).convert()
         self.rect = Rect(self.image.get_rect())
         self.aabb = Rect(self.rect)
-
+        
         self.world = world
         world.spawn_entity(self, loc)
 
@@ -50,7 +50,7 @@ class Entity(Sprite):
         
         spritesheet = animation.get_random(entitytype) if not spritesheet else animation.get(spritesheet)
         self.animator = animation.HumanAnimator(self, spritesheet)
-
+    
     def tick(self, render):
         """
         Called per frame
@@ -110,7 +110,7 @@ class Entity(Sprite):
             if dx != 0 or dy != 0:
                 c = self.aabb.center
                 self.move_entity(c[0] + dx, c[1] + dy)
-                
+        
         self.handle_interactions()
         
         
@@ -165,20 +165,26 @@ class Entity(Sprite):
         Corrects any collisions with the world
         """
         rects = self.world.get_colliding_blocks(self.aabb)
-        half_tile = constants.TILE_SIZE / 2
-
+        half = constants.TILE_SIZE / 2
+        half_dim = half, half
+        
         for rect in rects:
-            r = rect[0]  # don't need the dimensions
+            r = rect[0]  # strip the dimensions
+            if rect[1] != constants.DIMENSION:
+                half_tile = rect[1][0]/2, rect[1][1]/2
+            else:
+                half_tile = half_dim
+            
             block = self.world.get_solid_block(*util.pixel_to_tile(r))
 
             # resolve collision
             center_a = self.aabb.center
-            center_b = (r[0] + half_tile, r[1] + half_tile)
+            center_b = (r[0] + half_tile[0], r[1] + half_tile[1])
 
             distance_x = center_a[0] - center_b[0]
             distance_y = center_a[1] - center_b[1]
-            min_x = self.aabb.width / 2 + half_tile
-            min_y = self.aabb.height / 2 + half_tile
+            min_x = self.aabb.width / 2 + half_tile[0]
+            min_y = self.aabb.height / 2 + half_tile[1]
 
             if distance_x > 0:
                 x_overlap = min_x - distance_x
@@ -194,7 +200,8 @@ class Entity(Sprite):
                 self.aabb.y += y_overlap
             else:
                 self.aabb.x += x_overlap
-            self.catchup_aab() # todo test
+        
+        self.catchup_aab() # todo test
         
     def handle_interactions(self):
         pass
@@ -245,6 +252,7 @@ class Human(Entity):
         Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet)
 
         self.aabb.height /= 2
+        self.aabb.inflate(-6, 0)
         self.interact_aabb = Rect(self.aabb)
 
         offset = self.rect.width / 4
