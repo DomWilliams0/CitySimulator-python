@@ -546,7 +546,7 @@ class _BlockHelper:
     def load_tileset(self):
         tileset_surface = pygame.image.load(util.get_resource_path("tileset.png")).convert_alpha()
 
-        rect = pygame.Rect(0, 0, constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION)
+        rect = util.Rect(0, 0, constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION)
         width = tileset_surface.get_width()
 
         def move_along():
@@ -568,7 +568,7 @@ class _BlockHelper:
             # blit and scale block sprite to tile size
             surface = pygame.Surface(constants.DIMENSION).convert_alpha()
             temp_tile = pygame.Surface((constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION), 0, tileset_surface)
-            temp_tile.blit(tileset_surface, (0, 0), rect)
+            temp_tile.blit(tileset_surface, (0, 0), rect.to_tuple())
 
             pygame.transform.scale(temp_tile, constants.DIMENSION, surface)
 

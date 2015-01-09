@@ -1,6 +1,6 @@
 import random
 
-from pygame.rect import Rect
+from util import Rect
 from pygame.sprite import Sprite
 from pygame.surface import Surface
 
@@ -28,7 +28,7 @@ class Entity(Sprite):
         """
         Sprite.__init__(self)
         self.image = Surface(dimensions).convert()
-        self.rect = self.image.get_rect()
+        self.rect = Rect(self.image.get_rect())
         self.aabb = Rect(self.rect)
 
         self.world = world
@@ -69,15 +69,17 @@ class Entity(Sprite):
         """
         Moves the aabb by velocity * delta, according to collisions
         """
-
         # rounding compensation
         delta = self.velocity * constants.DELTA
+        """
+        rects are no longer rounded to nearest int
         if delta[0] < 0:
             delta[0] += 1
         if delta[1] < 0:
             delta[1] += 1
-
-        self.aabb.center += delta
+        """
+            
+        self.aabb.add_vector(delta)
         self.catchup_aab()
 
         # collisions
@@ -284,7 +286,7 @@ class Player(Human):
 class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
         Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, can_leave_world=True)
-        self.controller = ai.RandomWanderer(self)
+        self.controller = ai.VehicleController(self)
         
         # debug
         self.world.move_to_spawn(self, 0)

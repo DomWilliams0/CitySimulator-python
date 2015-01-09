@@ -17,78 +17,123 @@ _KEYS = [pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d]
 class BaseController:
     def __init__(self, the_entity, speed):
         self.entity = the_entity
-        self.speed = speed
-
+        self.speed = constants.Speed.SLOW if speed is None else speed
+        self.boost = False
+        self.wasd = OrderedDict()
+        
+        for k in _KEYS:
+            self.wasd[k] = False
+        
     def tick(self):
         pass
+            
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
+            self.handle(event.type == pygame.KEYDOWN, event.key)
+            
+    def handle(self, keydown, key):
+        if key == pygame.K_LSHIFT:
+            self.boost = not self.boost
+            self._move_entity()
+        
+        elif key in self.wasd.keys():
+            self.wasd[key] = keydown
+            self._move_entity()
 
     def halt(self):
-        pass
+        for k, _ in self.wasd.items():
+            self.wasd[k] = False
 
     def __setattr__(self, key, value):
         if key == "entity" and value:
             value.controller = self
         self.__dict__[key] = value
 
+    def _get_direction(self, neg, pos):
+        n = self.wasd[neg]
+        p = self.wasd[pos]
+        speed = constants.Speed.FAST if self.boost else self.speed
+        return 0 if n == p else -speed if n else speed
+        
+    def _move_entity(self):
+        keys = self.wasd.keys()
+        self.entity.velocity.x = self._get_direction(keys[1], keys[3])
+        self.entity.velocity.y = self._get_direction(keys[0], keys[2])
+
 
 class PlayerController(BaseController):
     def __init__(self, the_entity, speed=None):
-        BaseController.__init__(self, the_entity, speed if speed else constants.Speed.SLOW)
-        self.wasd = OrderedDict()
-        for k in _KEYS:
-            self.wasd[k] = False
-        self.sprint = False
+        BaseController.__init__(self, the_entity, speed)
+        
+    def handle(self, keydown, key):
+        BaseController.handle(self, keydown, key)
+    
+        # debug keys
+        try:
+            if keydown:     
+                if key == pygame.K_SPACE:
+                    self.speed = random.choice(constants.Speed.VALUES)
+                    self._move_entity()
 
-    def handle_event(self, event):
-        t = event.type
+                if key == pygame.K_j:
+                    util.debug_block(self.entity.rect.center, self.entity.world)
 
-        if t == pygame.KEYDOWN or t == pygame.KEYUP:
-            k = event.key
-            if k == pygame.K_LSHIFT:
-                self.sprint = not self.sprint
-                self._move_entity()
+                if key == pygame.K_n:
+                    for b in self.entity.world.buildings:
+                        for w in b.windows.keys():
+                            b.set_window(w, random.random() < 0.5)
+                if key == pygame.K_g:
+                    h = entity.Human(self.entity.world)
+                    h.wander()
+                    h.move_entity(*self.entity.rect.center)
+        except AttributeError:
+            pass
 
-            # debug keys begin
-            try:
-                if t == pygame.KEYDOWN:     
-                    if k == pygame.K_SPACE:
-                        self.speed = random.choice(constants.Speed.VALUES)
-                        self._move_entity()
 
-                    if k == pygame.K_j:
-                        util.debug_block(self.entity.rect.center, self.entity.world)
-
-                    if k == pygame.K_n:
-                        for b in self.entity.world.buildings:
-                            for w in b.windows.keys():
-                                b.set_window(w, random.random() < 0.5)
-                    if k == pygame.K_g:
-                        h = entity.Human(self.entity.world)
-                        h.wander()
-                        h.move_entity(*self.entity.rect.center)
-            except AttributeError:
-                pass
-            # debug keys end
-
-            if k in self.wasd.keys():
-                self.wasd[k] = t == pygame.KEYDOWN
-                self._move_entity()
-
+class VehicleController(BaseController):
+    def __init__(self, vehicle):
+        BaseController.__init__(self, vehicle, constants.Speed.MAX)
+    
+    def tick(self):
+        # maintain speed if key is pressed, otherwise slow down/friction
+        pass
+    
+    def handle(self, keydown, key):
+        # if current direction: speed up, else slow down
+        pass
+        
     def halt(self):
-        for k, _ in self.wasd.items():
-            self.wasd[k] = False
-            
-    def _move_entity(self):
-        keys = self.wasd.keys()
+        # apply other direction until stopped
+        pass
 
-        def get_direction(neg, pos):
-            n = self.wasd[neg]
-            p = self.wasd[pos]
-            speed = constants.Speed.WTF_DEBUG if self.sprint else self.speed
-            return 0 if n == p else -speed if n else speed
+class RandomWanderer(BaseController):
+    def __init__(self, the_entity):
+        BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
+        self.last_press = 0
+        self.keys = {}
 
-        self.entity.velocity.x = get_direction(keys[1], keys[3])
-        self.entity.velocity.y = get_direction(keys[0], keys[2])
+    def tick(self):
+        self.last_press -= 1
+        if self.last_press < 0:
+            self.last_press = random.randrange(1, 12)
+
+            # choose random key to press
+            if len(self.keys) < 2 and random.random() < 0.1:
+                newkey = random.choice(_KEYS)
+                if newkey not in self.keys:
+                    self.keys[newkey] = random.randrange(1, 8)
+                    self.handle(True, newkey)
+
+            # press/unpress all
+            for key, time in self.keys.items():
+                time -= 1
+                release = time < 0
+                if release:
+                    del self.keys[key]
+                else:
+                    self.keys[key] = time
+
+                self.handle(not release, key)
 
 
 class _PathFinder:
@@ -199,66 +244,3 @@ class SimplePathFollower(BaseController):
         y = abs(pos[1] - self.current_goal[1])
         dist_squared = x * x + y * y
         return dist_squared < constants.TILE_SIZE / threshold ** 2
-
-
-# todo wander instead
-class RandomPathFollower(SimplePathFollower):
-    def __init__(self, the_entity, speed):
-        SimplePathFollower.__init__(self, the_entity, speed)
-        self._add_random_point()
-
-    def _reached_goal(self, pos, threshold=1):
-        reached_goal = SimplePathFollower._reached_goal(self, pos, threshold)
-        if reached_goal:
-            self._add_random_point()
-        return reached_goal
-
-    def _add_random_point(self):
-        tile_range = 2
-        current = self.entity.rect.center
-        pixel_range = tile_range * constants.TILE_SIZE
-
-        dx = random.randrange(-pixel_range, pixel_range + 1)
-        dy = random.randrange(-pixel_range, pixel_range + 1)
-        self.add_point(current[0] + dx, current[1] + dy)
-
-
-class RandomWanderer(PlayerController):
-    def __init__(self, the_entity):
-        PlayerController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
-        self.last_press = 0
-        self.keys = {}
-
-    class PhonyEvent:
-        def __init__(self, etype, key):
-            self.type = etype
-            self.key = key
-
-    def _move(self, key, pressdown):
-        self.handle_event(self.PhonyEvent(pygame.KEYDOWN if pressdown else pygame.KEYUP, key))
-
-    def tick(self):
-        self.last_press -= 1
-        if self.last_press < 0:
-            self.last_press = random.randrange(1, 12)
-
-            # choose random key to press
-            if len(self.keys) < 2 and random.random() < 0.1:
-                newkey = random.choice(_KEYS)
-                if newkey not in self.keys:
-                    self.keys[newkey] = random.randrange(1, 8)
-                    self._move(newkey, True)
-
-            # press/unpress all
-            for key, time in self.keys.items():
-                time -= 1
-                release = time < 0
-                if release:
-                    del self.keys[key]
-                else:
-                    self.keys[key] = time
-                self._move(key, not release)
-
-                # key = random.choice([pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d])
-                # e = self.PhonyEvent(pygame.KEYDOWN if random.random() < 0.5 else pygame.KEYUP, key)
-                # self.handle_event(e)

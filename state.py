@@ -42,16 +42,16 @@ class ZoomTransition(Transition):
         Transition.__init__(self)
         scale = 15
         self.dim = (constants.WINDOW_SIZE[0] / scale, constants.WINDOW_SIZE[1] / scale)
-        self.space = pygame.Rect(constants.WINDOW_CENTRE, self.dim)
+        self.space = util.Rect(constants.WINDOW_CENTRE, self.dim)
 
     def tick(self):
         if self.space.width > constants.WINDOW_SIZE[0]:
             self.complete = True
 
-        self.space.inflate_ip(*self.dim)
+        self.space.inflate(*self.dim)
 
         Transition.SCREEN_COVER.fill(State.BACKGROUND)
-        pygame.draw.rect(Transition.SCREEN_COVER, (0, 0, 0, 0), self.space)
+        pygame.draw.rect(Transition.SCREEN_COVER, (0, 0, 0, 0), self.space.to_tuple())
         constants.SCREEN.blit(Transition.SCREEN_COVER)
 
 
@@ -151,10 +151,6 @@ class State:
         if controller.entity:
             controller.handle_event(event)
 
-            # always follows controller entity
-            # if not constants.SCREEN.camera.target:
-            # constants.SCREEN.camera.target = controller.entity
-
     def tick(self):
         """
         Called per frame
@@ -186,7 +182,7 @@ class GameState(State):
         # load main world, with all buildings
         self.world = world_module.World.load_tmx("world.tmx")
 
-        constants.STATEMANAGER.human_controller.entity = Player(self.world)  # debug creates a new human and follows him
+        constants.STATEMANAGER.human_controller.entity = Human(self.world)  # debug creates a new human and follows him
         constants.SCREEN.set_camera_world(self.world)
         constants.SCREEN.camera.target = constants.STATEMANAGER.human_controller.entity
 
@@ -195,12 +191,12 @@ class GameState(State):
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(5):
+        for _ in xrange(2):
             h = Human(self.world)
             h.wander()
             
         # add some vehicles
-        for _ in xrange(1):
+        for _ in xrange(0):
             v = Vehicle(self.world)
 
     def tick(self):

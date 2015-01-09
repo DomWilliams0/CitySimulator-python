@@ -18,19 +18,19 @@ class BaseSpriteSheet:
         self.length = length
         
         HumanSpriteSheet._LOADED[self.nickname] = self
-        logging.info("Spritesheet loaded: [%s]" % self.nickname)
+        logging.debug("Spritesheet loaded: [%s]" % self.nickname)
         
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
         width = sheet_dimensions[0] / sprite_dimensions[0]
         height = sheet_dimensions[1] / sprite_dimensions[1]
     
         rows = 0
-        rect = pygame.Rect((0, start_y*sprite_dimensions[1]), sprite_dimensions)
+        rect = util.Rect((0, start_y*sprite_dimensions[1]), sprite_dimensions)
         
         for y in xrange(start_y, height):
             for _ in xrange(self.length):
                 sprite = pygame.Surface(sprite_dimensions, 0, self.sheet).convert_alpha()
-                sprite.blit(self.sheet, (0, 0), rect)
+                sprite.blit(self.sheet, (0, 0), rect.to_tuple())
                 self.sprites[y].append(sprite)
                 rect.x += sprite_dimensions[0]
             
@@ -89,6 +89,7 @@ def load_all():
                 
             if d == "vehicles":
                 VehicleSpriteSheet(path, (128, 128), (32, 32), (64, 32), 2)
+    logging.info("Loaded %d sprites" % len(BaseSpriteSheet._LOADED))
  
 
         
@@ -154,7 +155,7 @@ class HumanAnimator:
         speed = self._get_speed()
         if speed != self.last_speed:
             self.last_speed = speed
-            step = 0.3 if speed == constants.Speed.SLOW else (0.25 if speed == constants.Speed.MEDIUM else 0.15)
+            step = 0.28 if speed == constants.Speed.SLOW else (0.2 if speed == constants.Speed.MEDIUM else 0.14)
             self.turn(self.sequence_index, starting_index=-1, step=step)
 
         self.was_moving = moving

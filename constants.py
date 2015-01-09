@@ -5,6 +5,7 @@ from vec2d import Vec2d
 import world as world_module
 import logging
 import random
+import util
 
 class GameScreen:
     """
@@ -25,7 +26,7 @@ class GameScreen:
         self.font = pygame.font.SysFont("monospace", 20, bold=True)
 
         LOGGER = logging.getLogger("SimulatorGame")
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.INFO)
 
     def set_camera_world(self, world):
         """
@@ -154,9 +155,9 @@ class Camera:
     def apply_rect(self, rect):
         """
         Applies camera offset to a rectangle
-        :param rect Either a pygame.Rect or a tuple ((x, y), (w, h))
+        :param rect Either a util.Rect or a tuple ((x, y), (w, h))
         """
-        if not isinstance(rect, pygame.Rect):
+        if not isinstance(rect, util.Rect):
             rect = rect[0]
         return self.apply(rect)
 
@@ -184,9 +185,10 @@ class Camera:
 
 # todo bring direction here too, and then import * height 
 class Speed:
-    SLOW = 100
-    MEDIUM = 140
+    SLOW = 60
+    MEDIUM = 100
     FAST = 200
+    MAX = 360
     WTF_DEBUG = 800
 
     VALUES = [SLOW, MEDIUM, FAST]

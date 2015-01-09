@@ -13,7 +13,7 @@ import random
 class Building:
     def __init__(self, world, x, y, width, height, name):
         self.world = world
-        self.rect = pygame.Rect(x, y, width, height)
+        self.rect = util.Rect(x, y, width, height)
         self.doors = []
         self.windows = {}
         self.inside = world_module.BuildingWorld.load_tmx(name + ".tmx")

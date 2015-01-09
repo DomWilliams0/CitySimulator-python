@@ -1,5 +1,5 @@
 import os
-
+from pygame.rect import Rect as pygame_Rect
 import constants
 import entity
 import world as world_module
@@ -94,3 +94,74 @@ def get_class(o):
 
 def distance_sqrd(p1, p2):
     return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
+    
+    
+class Rect:
+    def __init__(self, *args):
+        l = len(args)
+        if l == 2 and isinstance(args[0], tuple): # ((,), (,))
+            self._init(args[0][0], args[0][1], args[1][0], args[1][1])
+        elif l == 4: # (,,,)
+            self._init(*args)
+        elif l == 1:
+            r = args[0]
+            if isinstance(r, Rect):
+                self._init(r.x, r.y, r.width, r.height)
+            elif isinstance(r, pygame_Rect):
+                self._init(*r)
+                
+        else:
+            raise TypeError("Invalid argument")
+            
+    def _init(self, x, y, w, h):
+        self.x = x
+        self.y = y
+        self.width = w
+        self.height = h
+        
+    def __getattr__(self, key):
+        if key == 'topleft':
+            return self.x, self.y
+        elif key == 'bottomleft':
+            return self.x, self.y + self.height
+        elif key == 'topright':
+            return self.x + self.width, self.y
+        elif key == 'bottomright':
+            return self.x + self.width, self.y + self.height
+        elif key == 'right':
+            return self.x + self.width
+        elif key == 'midtop':
+            return self.x + self.width / 2, self.y
+        elif key == 'center':
+            return self.x + self.width / 2, self.y + self.height / 2
+        else:
+            return self.__dict__[key]
+            
+    def __setattr__(self, key, value):
+        if key == 'center':
+            self.x = value[0] - self.width / 2
+            self.y = value[1] - self.height / 2
+        else:
+            self.__dict__[key] = value
+
+    def __getitem__(self, key):
+        return (self.x, self.y, self.width, self.height)[key]
+        
+    def add_vector(self, vec2d):
+        self.center = (self.center[0] + vec2d.x, self.center[1] + vec2d.y)
+        
+    def colliderect(self, r):
+        return self.x + self.width > r[0] and r[0] + r[2] > self.x and self.y + self.height > r[1] and r[1] + r[3] > self.y
+        
+    def inflate(self, x, y):
+        self.x -= x / 2
+        self.y -= y / 2
+        self.width += x
+        self.height += y
+        
+    def to_tuple(self):
+        return (self.x, self.y, self.width, self.height)
+                
+    def __str__(self):
+        return "Rect{(%.1f, %.1f), (%.1f, %.1f)}" % (self.x, self.y, self.width, self.height)    
+    
