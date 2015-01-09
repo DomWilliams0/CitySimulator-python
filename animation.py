@@ -50,7 +50,6 @@ class BaseSpriteSheet:
         i = starting_index
         delta = 0
         seq_len = len(sequence)
-        step = animation_step
         while True:
             if i == seq_len:
                 i = 0
@@ -155,8 +154,7 @@ class HumanAnimator:
         speed = self._get_speed()
         if speed != self.last_speed:
             self.last_speed = speed
-            step = 0.28 if speed == constants.Speed.SLOW else (0.2 if speed == constants.Speed.MEDIUM else 0.14)
-            self.turn(self.sequence_index, starting_index=-1, step=step)
+            self.turn(self.sequence_index, starting_index=-1, speed=speed)
 
         self.was_moving = moving
        # if isinstance(self.spritesheet, VehicleSpriteSheet):
@@ -166,15 +164,18 @@ class HumanAnimator:
     
     def _render(self, sprite):
         constants.SCREEN.draw_sprite(sprite, self.entity.rect)
-        
     
-    def turn(self, index, starting_index=0, step=0.2):
+    def turn(self, index, starting_index=0, speed=-1):
         """
         Updates animation generator
         :param index: Sequence index ie Entity.{1}
         :param starting_index: Starting frame in sequence, can be -1 for current frame
         """
         self.sequence_index = index
+        if speed < 0:
+            speed = self._get_speed()
+        # step = 0.2 if speed == constants.Speed.SLOW else (0.14 if speed == constants.Speed.MEDIUM else 0.08)
+        step = 18.0/speed if speed else 0
         
-        frame = self.current_frame if self.current_frame == len(self.spritesheet.sprites[self.sequence_index]) else self.current_frame+1
-        self.walk_gen = self.spritesheet.get_sequence(step, index, frame)
+        #frame = self.current_frame if self.current_frame == len(self.spritesheet.sprites[self.sequence_index]) else self.current_frame+1
+        self.walk_gen = self.spritesheet.get_sequence(step, index, starting_index)
