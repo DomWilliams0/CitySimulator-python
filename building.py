@@ -1,13 +1,10 @@
 import random
 
-import pygame
-
 import constants
 import entity
 import event
 import util
 import world as world_module
-import random
 
 
 class Building:
@@ -22,17 +19,17 @@ class Building:
         for bx, by, b in self.inside.iterate_blocks():
             if b.blocktype == world_module.BlockType.ENTRANCE_MAT:
                 b.building = self
-                pixel_pos = util.tile_to_pixel((bx + 1,by))
+                pixel_pos = util.tile_to_pixel((bx + 1, by))
                 self.doors.append([pixel_pos])
                 self.inside.add_spawn(*pixel_pos)
-        
+
         # find doors in terrain layer
         d = 0
         for bx, by, b in self.iterate_blocks():
             if b.blocktype == world_module.BlockType.SLIDING_DOOR:
                 b.building = self
-                for j in xrange(d, d+2):
-                    self.doors[j].append(util.tile_to_pixel((bx,by)))
+                for j in xrange(d, d + 2):
+                    self.doors[j].append(util.tile_to_pixel((bx, by)))
                 d += 2
 
         if d != len(self.doors):
@@ -64,24 +61,24 @@ class Building:
         """
         if human not in self.inside.entities:
             human.visible = False
-            
+
             self.inside.spawn_human_at_spawn(human, self._closest(human, True), vary=False)
             human.turn(entity.constants.Direction.NORTH)
             human.controller.halt()
-            
+
             event.call_event(event.BUILDING_ENTER, entity=human, building=self)
-                     
+
     def exit(self, human):
         """
         Makes the given human leave the building.
         If they are not inside, nothing happens
         """
         try:
-            door = self.doors[self._closest(human, False)][1]    
+            door = self.doors[self._closest(human, False)][1]
             self.world.spawn_entity(human)
-                                          
+
             # vary exit point slightly so everyone doesn't appear in the same place when leaving       
-            human.move_entity(door[0] + random.randrange(constants.TILE_SIZE), door[1] + constants.TILE_SIZE*1.5 + random.randrange(constants.TILE_SIZE / 4))
+            human.move_entity(door[0] + random.randrange(constants.TILE_SIZE), door[1] + constants.TILE_SIZE * 1.5 + random.randrange(constants.TILE_SIZE / 4))
             human.turn(entity.constants.Direction.SOUTH)
             human.controller.halt()
 
@@ -90,14 +87,14 @@ class Building:
         except ValueError:
             pass
 
-    def set_window(self, pos, new_status): # todo state*, surely?
+    def set_window(self, pos, new_status):  # todo state*, surely?
         """
         Turns on/off the window at the given position
         """
         self.windows[pos] = new_status
         new_blocktype = world_module.BlockType.BUILDING_WINDOW_ON if new_status else world_module.BlockType.BUILDING_WINDOW_OFF
         self.world.set_block_type(pos[0], pos[1], new_blocktype, layer="overterrain")
-            
+
     def get_window(self, pos):
         """
         :return: Whether or not the window at the given position is switched on

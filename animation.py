@@ -1,44 +1,46 @@
-import pygame
-
-import constants
-import util
-import ai
 import logging
 import random
 import os
 
+import pygame
+
+import constants
+import util
+
+
 class BaseSpriteSheet:
-    _LOADED = {}
-    
+    LOADED = {}
+
     def __init__(self, path, width, height, length, animation_type, nickname=None):
         self.nickname = path.split(os.sep)[-1][:-4] if not nickname else nickname
         self.sprites = [[] * width for _ in xrange(height)]
         self.sheet = pygame.image.load(path).convert_alpha()
         self.type = animation_type
         self.length = length
-        
-        HumanSpriteSheet._LOADED[self.nickname] = self
+
+        HumanSpriteSheet.LOADED[self.nickname] = self
         logging.debug("Spritesheet loaded: [%s]" % self.nickname)
-        
+
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
-        width = sheet_dimensions[0] / sprite_dimensions[0]
+        # width = sheet_dimensions[0] / sprite_dimensions[0]
         height = sheet_dimensions[1] / sprite_dimensions[1]
-    
+
         rows = 0
-        rect = util.Rect((0, start_y*sprite_dimensions[1]), sprite_dimensions)
-        
+        rect = util.Rect((0, start_y * sprite_dimensions[1]), sprite_dimensions)
+
         for y in xrange(start_y, height):
             for _ in xrange(self.length):
                 sprite = pygame.Surface(sprite_dimensions, 0, self.sheet).convert_alpha()
                 sprite.blit(self.sheet, (0, 0), rect.to_tuple())
                 self.sprites[y].append(sprite)
                 rect.x += sprite_dimensions[0]
-            
+
             rows += 1
-            if rows == row_count: return
+            if rows == row_count:
+                return
             rect.y += sprite_dimensions[1]
             rect.x = 0
-            
+
     def get_sequence(self, animation_step, index, starting_index=0):
         """
         :param animation_step: Seconds between each frame
@@ -59,42 +61,44 @@ class BaseSpriteSheet:
                 delta = 0
                 i += 1
 
+
 def get(nickname):
     """
     If the spritesheet is already loaded, returns its instance, otherwise None
     """
-    return BaseSpriteSheet._LOADED.get(nickname)
+    return BaseSpriteSheet.LOADED.get(nickname)
+
 
 def get_random(animation_type=None):
-    timeout = len(BaseSpriteSheet._LOADED) * 4
+    timeout = len(BaseSpriteSheet.LOADED) * 4
     for _ in xrange(timeout):
-        x = random.choice(BaseSpriteSheet._LOADED.values())
+        x = random.choice(BaseSpriteSheet.LOADED.values())
         if x.type == animation_type or animation_type is None:
             return x
     return None
 
+
 def load_all():
     # raise NotImplementedError("Load them manually now, learn to glob another day")
-    import os        
+    import os
+
     for root, dirs, files in os.walk(util.get_relative_path("sprites")):
         d = root.split(os.sep)[-1]
         for f in files:
-            if f[-3:] != "png": continue
+            if f[-3:] != "png":
+                continue
             path = os.path.join(root, f)
-            
+
             # humans
             if d == "humans":
                 HumanSpriteSheet(path, (128, 128), (32, 32), 4)
-                
+
             if d == "vehicles":
                 VehicleSpriteSheet(path, (128, 128), (32, 32), (64, 32), 2)
-    logging.info("Loaded %d sprites" % len(BaseSpriteSheet._LOADED))
- 
+    logging.info("Loaded %d sprites" % len(BaseSpriteSheet.LOADED))
 
-        
 
 class HumanSpriteSheet(BaseSpriteSheet):
-
     def __init__(self, path, sheet_dimensions, sprite_dimensions, length):
         """
         :param path: Absolute path
@@ -104,14 +108,14 @@ class HumanSpriteSheet(BaseSpriteSheet):
         BaseSpriteSheet.__init__(self, path, 4, 4, length, constants.EntityType.HUMAN)
         self._load_sprites(sheet_dimensions, sprite_dimensions, -1, 0)
 
-        
+
 class VehicleSpriteSheet(BaseSpriteSheet):
     def __init__(self, path, sheet_dimensions, starting_dimensions, ending_dimensions, length):
         BaseSpriteSheet.__init__(self, path, 2, 4, length, constants.EntityType.VEHICLE)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 0)
         self._load_sprites(sheet_dimensions, ending_dimensions, 2, 1)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 3)
-	
+
 
 class HumanAnimator:
     """
@@ -129,10 +133,11 @@ class HumanAnimator:
 
         self.was_moving = self.entity.is_moving()
         self.last_speed = self._get_speed()
-        
+
     def _get_speed(self):
         v = self.entity.velocity
-        if v[0] != 0: return abs(v[0])
+        if v[0] != 0:
+            return abs(v[0])
         return abs(v[1])
 
     def tick(self):
@@ -141,30 +146,27 @@ class HumanAnimator:
         """
         sprite = self._next_sprite()
         self._render(sprite)
-    
+
     def _next_sprite(self):
         moving = self.entity.is_moving()
-        if moving:       
-            if not self.was_moving:                                        
-                self.turn(self.sequence_index, starting_index=1) # todo make sure first frame in all vehicle animations are stationery
+        if moving:
+            if not self.was_moving:
+                self.turn(self.sequence_index, starting_index=1)  # todo make sure first frame in all vehicle animations are stationery
             sprite, self.current_frame = self.walk_gen.next()
         else:
             sprite = self.spritesheet.sprites[self.sequence_index][0]
-            
+
         speed = self._get_speed()
         if speed != self.last_speed:
             self.last_speed = speed
             self.turn(self.sequence_index, starting_index=-1, speed=speed)
 
         self.was_moving = moving
-       # if isinstance(self.spritesheet, VehicleSpriteSheet):
-        #    print self.sequence_index, self.current_frame
         return sprite
-        
-    
+
     def _render(self, sprite):
         constants.SCREEN.draw_sprite(sprite, self.entity.rect)
-    
+
     def turn(self, index, starting_index=0, speed=-1):
         """
         Updates animation generator
@@ -174,8 +176,6 @@ class HumanAnimator:
         self.sequence_index = index
         if speed < 0:
             speed = self._get_speed()
-        # step = 0.2 if speed == constants.Speed.SLOW else (0.14 if speed == constants.Speed.MEDIUM else 0.08)
-        step = 18.0/speed if speed else 0
-        
-        #frame = self.current_frame if self.current_frame == len(self.spritesheet.sprites[self.sequence_index]) else self.current_frame+1
+        step = 18.0 / speed if speed else 0
+
         self.walk_gen = self.spritesheet.get_sequence(step, index, starting_index)

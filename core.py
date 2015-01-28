@@ -17,7 +17,7 @@ class Game:
         """
         clock = pygame.time.Clock()
         while self.running:
-            constants.DELTA = (clock.tick(60)/ 1000.0)
+            constants.DELTA = (clock.tick(60) / 1000.0)
             state = constants.STATEMANAGER.current
 
             for event in pygame.event.get():
@@ -52,9 +52,12 @@ class Game:
             constants.SCREEN.fill(value.background_colour)
         self.__dict__[key] = value
 
+
 def _centre_window():
     import os
+
     os.environ['SDL_VIDEO_CENTERED'] = '1'
+
 
 if __name__ == '__main__':
     _centre_window()

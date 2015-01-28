@@ -1,17 +1,18 @@
-import constants
 from collections import OrderedDict
 import random
 import operator
+import logging
 
 import pygame
 
+import constants
 from building import Building
 import util
 from vec2d import Vec2d
-import logging
-import entity
 
-WORLDS = [] # todo move to GameState
+
+WORLDS = []  # todo move to GameState
+
 
 class _WorldLayer:
     def __init__(self, world, name, default_fill=None, draw_above=False, solid_blanks=False):
@@ -31,14 +32,14 @@ class _WorldLayer:
     def __getitem__(self, item):
         return self._blocks[item]
 
-class WorldRenderer:
 
+class WorldRenderer:
     class _RenderLayer:
         def __init__(self, world, layer_func):
             self.world = world
             self.layers = [(n, l) for n, l in world.layers.items() if layer_func(n, l)]
             self.surface = pygame.Surface((world.pixel_width, world.pixel_height)).convert_alpha()
-            self.surface.fill((0,0,0,0))
+            self.surface.fill((0, 0, 0, 0))
 
         def render(self):
             constants.SCREEN.blit(self.surface, (-constants.SCREEN.camera.pos[0], -constants.SCREEN.camera.pos[1]))
@@ -48,9 +49,9 @@ class WorldRenderer:
         self.world = world
         self.layers.append(self._RenderLayer(world, lambda n, l: not l.draw_above and n != "rects"))
         self.layers.append(self._RenderLayer(world, lambda _, l: l.draw_above))
-        
-        #self.night = pygame.Surface(constants.WINDOW_SIZE).convert_alpha()
-        #self.night.fill((5,5,60,160))
+
+        # self.night = pygame.Surface(constants.WINDOW_SIZE).convert_alpha()
+        # self.night.fill((5,5,60,160))
 
     def initial_render(self):
         for rlayer in self.layers:
@@ -69,7 +70,7 @@ class WorldRenderer:
     def render_block(self, block, pos, world_layer):
         rlayer = self._find_rlayer(world_layer)
         constants.SCREEN.draw_block(block, (util.tile_to_pixel(pos), constants.DIMENSION), surface=rlayer.surface)
-                                        
+
     def _find_rlayer(self, wlayer):
         for rl in self.layers:
             for n, _ in rl.layers:
@@ -104,7 +105,7 @@ class BaseWorld:
 
     def _reg_layer(self, name, draw_above=False, solid_blanks=False):
         if name in self.layers:
-            LOGGER.warning("Layer '%s' already exists in the world" % name)
+            logging.warning("Layer '%s' already exists in the world" % name)
         else:
             self.layers[name] = _WorldLayer(self, name, draw_above=draw_above, solid_blanks=solid_blanks)
 
@@ -143,9 +144,8 @@ class BaseWorld:
                 offset, collision_rect = Block.HELPER.get_collision_rect(block)
                 pos = util.tile_to_pixel((x, y))
                 pos = pos[0] + offset[0], pos[1] + offset[1]
-                new_value =  pos, collision_rect
+                new_value = pos, collision_rect
                 self.layers["rects"][y][x] = new_value
-
 
         if constants.SCREEN.camera:
             self.renderer.render_block(block, (x, y), layer)
@@ -178,14 +178,13 @@ class BaseWorld:
                         r = rect_grid[y][x]
                     except IndexError:
                         continue
-                    if r: constants.SCREEN.draw_rect(r, color=(200, 240, 200), filled=False)
                     if r and rect.colliderect(r):
                         rects.append(r)
         else:
             for interactable in self.interact_rects:
                 if rect.colliderect(interactable):
                     rects.append(interactable)
-        
+
         return rects
 
     def print_ascii(self, layer="terrain"):
@@ -196,39 +195,41 @@ class BaseWorld:
             for x in xrange(self.tile_width):
                 print(self.get_block(x, y, layer)),
             print
-    
+
     def tick_entities(self, render, boundaries=None):
         """
         Ticks all entities
-        :param boundaries Only render those in the given boundaries. Format: x1, y1, x2, y2
+        :param boundaries Only render those in the given boundaries (format: x1, y1, x2, y2)
         """
         swapsies = []
         # swap entities for layering
         # debug very intensive, need to find a better way to detect entity collisions, quadtrees?
         # todo only those that are on screen
         for i, entity in enumerate(self.entities):
-        	for j, other in enumerate(self.entities):
-        		# todo are they visible on the screen?
-        		if i == j or entity.id < other.id: continue
+            for j, other in enumerate(self.entities):
+                # todo are they visible on the screen?
+                if i == j or entity.id < other.id:
+                    continue
 
-        		distance = (entity.rect.x - other.rect.x) ** 2 + (entity.rect.y - other.rect.y) ** 2
-        		if distance > entity.rect.width**2 or distance > entity.rect.height**2: continue
+                distance = (entity.rect.x - other.rect.x) ** 2 + (entity.rect.y - other.rect.y) ** 2
+                if distance > entity.rect.width ** 2 or distance > entity.rect.height ** 2:
+                    continue
 
-        		# walking south and over
-        		if (i < j and entity.rect.bottomleft[1] > other.rect.bottomleft[1]) or (i > j and entity.rect.bottomleft[1] < other.rect.bottomleft[1]):
-        			swapsies.append((entity, i, other, j))
+                # walking south and over
+                if (i < j and entity.rect.bottomleft[1] > other.rect.bottomleft[1]) or (i > j and entity.rect.bottomleft[1] < other.rect.bottomleft[1]):
+                    swapsies.append((entity, i, other, j))
         if swapsies:
             for e, i, o, j in swapsies:
-        		temp = self.entities[i]
-        		self.entities[i] = self.entities[j]
-        		self.entities[j] = temp
+                temp = self.entities[i]
+                self.entities[i] = self.entities[j]
+                self.entities[j] = temp
 
-        # draw entities
+        # draw entitiesa
         for e in self.entities:
             if e.dead:
                 self.kick_entity(e)
             else:
-                e.tick(render) # todo only render on screen, maybe add function to entity to find if on screen? passing in camera coords
+                e.tick(render)  # todo only render on screen, maybe add function to entity to find if on screen? passing in camera coords
 
         # flush buffer
         for e, v in self.entity_buffer.items():
@@ -243,8 +244,6 @@ class BaseWorld:
         Ticks the world and all entities, removing all the dead
         :param render Whether or not the world should be rendered after ticking
         """
-
-
         # find screen boundaries
         if render:
             camera = constants.SCREEN.camera
@@ -260,12 +259,11 @@ class BaseWorld:
             x1 = max(0, pos[0] - 1)
             y1 = max(0, pos[1] - 1)
 
-        entity_tick_args = (render, (x1,y1,x2,y2) if render else None)
+        entity_tick_args = (render, (x1, y1, x2, y2) if render else None)
         if render:
             self.renderer.render_sandwich(self.tick_entities, entity_tick_args)
         else:
             self.tick_entities(*entity_tick_args)
-
 
     def iterate_blocks(self, x1=0, y1=0, x2=-1, y2=-1, layer="terrain"):
         """
@@ -352,7 +350,6 @@ class BaseWorld:
         self.spawn_entity(human)
         self.move_to_spawn(human, spawn_index, vary)
 
-
     @classmethod
     def load_tmx(cls, filename):
         """
@@ -360,6 +357,7 @@ class BaseWorld:
         :return The loaded world
         """
         from xml.etree import ElementTree
+
         tree = ElementTree.parse(util.get_resource_path(filename))
         root = tree.getroot()
 
@@ -394,11 +392,6 @@ class BaseWorld:
 
             draw_above = not world.layers[layer_name].draw_above
             solid_blanks = world.layers[layer_name].solid_blanks
-
-            # rotation flags
-            """rotation = 0x01 << 29
-            vertical = 0x02 << 29
-            horizontal = 0x04 << 29"""
 
             for c in data.strip().split(','):
                 # new row
@@ -472,13 +465,13 @@ class BaseWorld:
             w = int(s["width"]) * a
             h = int(s["height"]) * a
             o = util.parse_orientation(p["orientation"])
-            world.add_spawn(x, y, o,w,h)
+            world.add_spawn(x, y, o, w, h)
 
         logging.debug("World loaded: [%s]" % filename)
         return world
 
     def add_spawn(self, x, y, o=None, w=None, h=None):
-        self._spawns.append((x,y,util.parse_orientation(o),constants.TILE_SIZE if not w else w,constants.TILE_SIZE if not h else h))
+        self._spawns.append((x, y, util.parse_orientation(o), constants.TILE_SIZE if not w else w, constants.TILE_SIZE if not h else h))
 
 
 class World(BaseWorld):
@@ -515,6 +508,7 @@ class BuildingWorld(BaseWorld):
         self._reg_layer("rects")
 
         self._post_init()
+
 
 class _BlockHelper:
     """
@@ -593,18 +587,20 @@ class _BlockHelper:
         new_block = Block.clone(block)
         self.block_images[new_block.render_id] = self.block_images[block.render_id]
         return new_block
-        
+
     def get_collision_rect(self, block):
         offset = (0, 0)
         rect = constants.DIMENSION
         blockid, rot, hor, ver = self.get_rotation(block.render_id)
+
+        # todo register modifications in a dictionary, to avoid if if if for other blocktypes
         if blockid == BlockType.BUILDING_EDGE:
             rect = int(rect[0] * 0.8), rect[1]
             if not hor:
                 offset = (int(rect[0] * 0.2) + 1, 0)
-            
+
         return offset, rect
-        
+
     def get_rotation(self, block_id):
         rotation = 0x01 << 29
         vertical = 0x02 << 29
@@ -625,7 +621,6 @@ class _BlockHelper:
 
 
 class BlockType:
-
     BLANK = 0
 
     GRASS = 1
@@ -747,8 +742,6 @@ class InteractableExitDoormatBlock(InteractableBlock):
 
     def interact(self, human, x, y):
         c = human.rect.center
-       # print x, c[0]-x, c[1]-y
         dy = c[1] - y
-        dx = c[0] - x
         if 0 < dy <= constants.TILE_SIZE / 2:
             self.building.exit(human)
