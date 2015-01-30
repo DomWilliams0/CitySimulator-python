@@ -21,7 +21,7 @@ class Building:
                 b.building = self
                 pixel_pos = util.tile_to_pixel((bx + 1, by))
                 self.doors.append([pixel_pos])
-                self.inside.add_spawn(*pixel_pos)
+                self.inside.add_spawn(constants.EntityType.HUMAN, *pixel_pos)
 
         # find doors in terrain layer
         d = 0
@@ -62,7 +62,7 @@ class Building:
         if human not in self.inside.entities:
             human.visible = False
 
-            self.inside.spawn_human_at_spawn(human, self._closest(human, True), vary=False)
+            self.inside.spawn_entity_at_spawn(human, self._closest(human, True), vary=False)
             human.turn(entity.constants.Direction.NORTH)
             human.controller.halt()
 

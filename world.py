@@ -11,7 +11,7 @@ import util
 from vec2d import Vec2d
 
 
-WORLDS = []  # todo move to GameState
+WORLDS = []
 
 
 class _WorldLayer:
@@ -93,7 +93,7 @@ class BaseWorld:
 
         self.entities = []
         self.entity_buffer = {}
-        self._spawns = []
+        self._spawns = {}
 
         self.half_block_boundaries = half_block_boundaries
         self.renderer = None
@@ -340,15 +340,15 @@ class BaseWorld:
         if loc:
             entity.move_entity(*loc)
 
-    def move_to_spawn(self, human, index, vary=True):
-        spawn = self._spawns[index]
+    def move_to_spawn(self, entity, index, vary=True):
+        spawn = self._spawns[entity.entitytype][index]
         pos = (spawn[0] + random.randrange(spawn[3]), spawn[1] + random.randrange(spawn[4])) if vary else spawn[:2]
-        human.move_entity(*pos)
-        human.turn(spawn[2])
+        entity.move_entity(*pos)
+        entity.turn(spawn[2])
 
-    def spawn_human_at_spawn(self, human, spawn_index, vary=True):
-        self.spawn_entity(human)
-        self.move_to_spawn(human, spawn_index, vary)
+    def spawn_entity_at_spawn(self, entity, spawn_index, vary=True):
+        self.spawn_entity(entity)
+        self.move_to_spawn(entity, spawn_index, vary)
 
     @classmethod
     def load_tmx(cls, filename):
@@ -465,13 +465,16 @@ class BaseWorld:
             w = int(s["width"]) * a
             h = int(s["height"]) * a
             o = util.parse_orientation(p["orientation"])
-            world.add_spawn(x, y, o, w, h)
+            entitytype = constants.EntityType.parse_string(p["entitytype"])
+            world.add_spawn(entitytype, x, y, o, w, h)
 
         logging.debug("World loaded: [%s]" % filename)
         return world
 
-    def add_spawn(self, x, y, o=None, w=None, h=None):
-        self._spawns.append((x, y, util.parse_orientation(o), constants.TILE_SIZE if not w else w, constants.TILE_SIZE if not h else h))
+    def add_spawn(self, entitytype, x, y, o=None, w=None, h=None):
+        spawns = self._spawns.get(entitytype, [])
+        spawns.append((x, y, util.parse_orientation(o), constants.TILE_SIZE if not w else w, constants.TILE_SIZE if not h else h))
+        self._spawns[entitytype] = spawns
 
 
 class World(BaseWorld):
@@ -508,6 +511,11 @@ class BuildingWorld(BaseWorld):
         self._reg_layer("rects")
 
         self._post_init()
+
+
+class RoadMap:
+    def __init__(self, world):
+        self.world = world
 
 
 class _BlockHelper:

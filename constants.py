@@ -95,7 +95,7 @@ class Camera:
 
     def __init__(self, world, target=None):
         self.view_size = WINDOW_SIZE
-        self.pos = Vec2d(0, 0)  # debug camera start pos
+        self.pos = Vec2d(0, 0)
         self.velocity = Vec2d(0, 0)
         self.target = target
 
@@ -115,11 +115,11 @@ class Camera:
             return
 
         v = self._direction_to_target(self.target.rect.center)
-        if v.get_length_sqrd() < 5 * 5:
+        if v.get_length_sqrd() < TILE_SIZE_SQRD / 2:
             self.velocity.x, self.velocity.y = 0, 0
             return
 
-        self.velocity = v * 5
+        self.velocity = v * 4
         self.pos += self.velocity * DELTA
 
         self._check_boundaries()
@@ -228,6 +228,15 @@ class Direction:
 class EntityType:
     HUMAN = 0
     VEHICLE = 1
+    ALL = 2
+
+    @staticmethod
+    def parse_string(s):
+        s = s.upper()
+        for prop, val in EntityType.__dict__.items():
+            if s == prop and isinstance(val, int):
+                return val
+        return EntityType.ALL
 
 
 STATEMANAGER = state.StateManager()

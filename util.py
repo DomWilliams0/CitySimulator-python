@@ -1,5 +1,4 @@
 import os
-import random
 
 from pygame.rect import Rect as pygame_Rect
 
@@ -109,10 +108,6 @@ def mix_colours(c1, c2, ensure_alpha=True):
     if ensure_alpha and len(mixed) == 3:
         mixed.append(255)
     return mixed
-
-
-def random_colour(alpha=255):
-    return random.randrange(127) + 127, random.randrange(127) + 127, random.randrange(127) + 127, alpha
 
 
 class Rect:

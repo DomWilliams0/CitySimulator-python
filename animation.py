@@ -8,6 +8,20 @@ import constants
 import util
 
 
+def clone(sheet):
+    import copy
+    sheet_copy = copy.deepcopy(sheet)
+    for seqi in xrange(len(sheet.sprites)):
+        sequence = sheet.sprites[seqi]
+        for spritei in xrange(len(sequence)):
+            sprite = sequence[spritei]
+            sprite_copy = sprite.copy()
+            sheet_copy.sprites[seqi][spritei] = sprite_copy
+
+    sheet_copy.sheet = sheet.sheet.copy()
+    return sheet_copy
+
+
 class BaseSpriteSheet:
     LOADED = {}
 
@@ -223,7 +237,3 @@ class VehicleAnimator(HumanAnimator):
             pass
 
         HumanAnimator.turn(self, index, starting_index, speed)
-
-    def tick(self):
-        HumanAnimator.tick(self)
-

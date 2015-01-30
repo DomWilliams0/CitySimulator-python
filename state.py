@@ -125,12 +125,20 @@ class StateManager:
             pass
 
     def transfer_control(self, entity):
+
+        # pop off control override from old controller, if any
+        if self.player_controller is not None:
+            self.player_controller.set_suppressed_behaviours(False)
+
         if not entity:
             self.player_controller = None
         else:
-            cls = ai.PlayerController if isinstance(entity, Human) else ai.VehicleController
-            self.player_controller = cls(entity)
-            constants.SCREEN.camera.target = entity
+            self.player_controller = entity.controller
+            self.player_controller.set_suppressed_behaviours(True)
+            self.follow_with_camera(entity)
+
+    def follow_with_camera(self, entity):
+        constants.SCREEN.camera.target = entity
 
     def get_current(self):
         return self._stack.top
@@ -204,14 +212,16 @@ class GameState(State):
         for _ in xrange(8):
             h = Human(self.world)
             h.wander()
+            constants.STATEMANAGER.transfer_control(h)
 
         # add some vehicles
         for _ in xrange(0):
-            v = Vehicle(self.world)
+            Vehicle(self.world)
 
         # debug vehicle to control
         v = Vehicle(self.world)
-        constants.STATEMANAGER.transfer_control(v)
+        # constants.STATEMANAGER.follow_with_camera(v)
+        # constants.STATEMANAGER.transfer_control(v)
 
     def tick(self):
         State.tick(self)

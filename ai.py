@@ -24,8 +24,24 @@ class BaseController:
         for k in _KEYS:
             self.wasd[k] = False
 
+        self._behaviours = util.Stack()
+
+    def add_behaviour(self, b):
+        self._behaviours.push(b)
+
+    def remove_current_behaviour(self):
+        self._behaviours.pop()
+
+    def set_suppressed_behaviours(self, suppress):
+        if suppress and self._behaviours.top is not None:
+            self.add_behaviour(None)
+        elif not suppress and self._behaviours.top is None:
+            self.remove_current_behaviour()
+
+
     def tick(self):
-        pass
+        if self._behaviours.top:
+            self._behaviours.top.tick()
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
@@ -72,7 +88,7 @@ class BaseController:
             return constants.Direction.WEST if key == _KEYS[1] else constants.Direction.WEST
 
 
-class PlayerController(BaseController):
+class HumanController(BaseController):
     """
     Used for other player input, such as inventory
     """
@@ -114,7 +130,7 @@ class VehicleController(BaseController):
         self._lasttop = None
 
         self._brake_force = 1
-        assert 1 >= self._brake_force >= 0
+        assert 0 <= self._brake_force <= 1
         self.braking = True
 
         self.current_speed = 0
@@ -126,8 +142,7 @@ class VehicleController(BaseController):
     def _get_speed(self):
         if self.entity.is_moving() and util.distance_sqrd(self.entity.aabb.topleft, self.last_pos) < self.acceleration:
             self.current_speed = 0
-            print "hit!"
-            # todo: register hit
+            print "hit!"  # todo: this should only fire once
 
         return self.current_speed
 
@@ -186,9 +201,22 @@ class VehicleController(BaseController):
         self.current_speed = 0
 
 
-class RandomWanderer(BaseController):
+class BaseBehaviour:
     def __init__(self, the_entity):
-        BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
+        self.entity = the_entity
+        self.controller = the_entity.controller
+
+    def tick(self):
+        pass
+
+    def handle(self, keydown, key):
+        self.controller.handle(keydown, key)
+
+
+class RandomHumanWanderer(BaseBehaviour):
+    def __init__(self, the_entity):
+        # BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
+        BaseBehaviour.__init__(self, the_entity)
         self.last_press = 0
         self.keys = {}
 
@@ -216,66 +244,61 @@ class RandomWanderer(BaseController):
                 self.handle(not release, key)
 
 
-class _PathFinder:
-    def __init__(self, world, start_pos, *allowed_blocks):
-        self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
-
-    def find_path(self, goal, path_follower):
-        # ah fuck, what now
-        pass
-
-    # noinspection PyMethodMayBeStatic
-    def _flood_find(self, world, pos, allowed_blocktypes):
-        stack = set()
-        results = []
-        allowed_blocktypes = set(allowed_blocktypes)
-        stack.add(pos)
-
-        while stack:
-            (x, y) = stack.pop()
-            block = world.get_block(x, y)
-            if block.blocktype in allowed_blocktypes and (x, y) not in results:
-                results.append((x, y))
-                if x > 0:
-                    stack.add((x - 1, y))
-                if x < world.tile_width - 1:
-                    stack.add((x + 1, y))
-                if y > 0:
-                    stack.add((x, y - 1))
-                if y < world.tile_height - 1:
-                    stack.add((x, y + 1))
-        return results
-
-
-class SimplePathFollower(BaseController):
+class SimpleVehicleFollower(BaseBehaviour):
     """
     Causes the given entity to follow the given points in order
     """
 
-    def __init__(self, the_entity, speed):
+    class _PathFinder:
+        def __init__(self, world, start_pos, *allowed_blocks):
+            self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
+
+        def find_path(self, goal, path_follower):
+            # ah fuck, what now
+            pass
+
+        # noinspection PyMethodMayBeStatic
+        def _flood_find(self, world, pos, allowed_blocktypes):
+            stack = set()
+            results = []
+            allowed_blocktypes = set(allowed_blocktypes)
+            stack.add(pos)
+
+            while stack:
+                (x, y) = stack.pop()
+                block = world.get_block(x, y)
+                if block.blocktype in allowed_blocktypes and (x, y) not in results:
+                    results.append((x, y))
+                    if x > 0:
+                        stack.add((x - 1, y))
+                    if x < world.tile_width - 1:
+                        stack.add((x + 1, y))
+                    if y > 0:
+                        stack.add((x, y - 1))
+                    if y < world.tile_height - 1:
+                        stack.add((x, y + 1))
+            return results
+
+    def __init__(self, the_entity):
         """
         :param speed: The starting constants.Speed at which the entity will move
         """
-        BaseController.__init__(self, the_entity, speed)
-        self.speed = speed
+        BaseBehaviour.__init__(self, the_entity)
 
         self.points = []
         self.current_goal = self._next_point()
 
         # finder = _PathFinder(the_entity.world, util.pixel_to_tile(the_entity.rect.center), (23, 6), world.BlockType.PAVEMENT_C)
 
-        # self.add_point(9.5 * constants.TILE_SIZE, 13.5 * constants.TILE_SIZE)
-        # self.add_point(9.5 * constants.TILE_SIZE, 7.5 * constants.TILE_SIZE)
-        # self.add_point(26.5 * constants.TILE_SIZE, 7.5 * constants.TILE_SIZE)
+        self.add_point(33, 8)
+        self.add_point(36, 28)
+        self.following = True
 
-        self.following = False
-
-    def add_point(self, x, y):
+    def add_point(self, tilex, tiley):
         """
         Appends the given point to the end of the path
         """
-        self.points.append((x, y))
-        self.following = True
+        self.points.append((tilex * constants.TILE_SIZE, tiley * constants.TILE_SIZE))
 
     def _next_point(self):
         try:
@@ -308,8 +331,8 @@ class SimplePathFollower(BaseController):
                 direction = Vec2d(goal[0] - pos[0], goal[1] - pos[1])
 
                 angle = util.round_to_multiple(direction.get_angle(), 45)
-                new_vel = Vec2d.from_angle(angle, self.speed)
-                self.entity.velocity = new_vel
+                # new_vel = Vec2d.from_angle(angle, self.speed)
+                # self.entity.velocity = new_vel
 
             # end goal reached
             else:

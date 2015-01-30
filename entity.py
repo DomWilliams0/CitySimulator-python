@@ -18,12 +18,14 @@ class Entity(Sprite):
 
     _LASTID = 0
 
-    def __init__(self, dimensions, world, entitytype, spritesheet=None, loc=None, world_collisions=True, world_interactions=False, can_leave_world=False):
+    def __init__(self, dimensions, world, entitytype, spritesheet=None, clone_spritesheet=False, loc=None, world_collisions=True, world_interactions=False, can_leave_world=False):
         """
         :param dimensions Dimensions of the sprite
         :param loc Starting position, defaults to a random location in the world
         :param world_collisions Whether or not this entity collides with the world
         :param can_leave_world Whether or not this entity is allowed to leave the world's boundaries
+        :param spritesheet Spritesheet name, if left None a random one is chosen
+        :param clone_spritesheet Should the animator just use the shared instance?
         """
         Sprite.__init__(self)
         self.image = Surface(dimensions).convert()
@@ -41,6 +43,7 @@ class Entity(Sprite):
 
         self.dead = False
         self.visible = True
+        self.entitytype = entitytype
 
         self.id = Entity._LASTID
         Entity._LASTID += 1
@@ -49,9 +52,11 @@ class Entity(Sprite):
         self.vertical_diagonal = True
         self.controller = None
 
-        spritesheet = animation.get_random(entitytype) if not spritesheet else animation.get(spritesheet)
-        animator_cls = animation.HumanAnimator if spritesheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
-        self.animator = animator_cls(self, spritesheet)
+        shared_sheet = animation.get_random(entitytype) if not spritesheet else animation.get(spritesheet)
+        animator_cls = animation.HumanAnimator if shared_sheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
+
+        ssheet = shared_sheet if not clone_spritesheet else animation.clone(shared_sheet)
+        self.animator = animator_cls(self, ssheet)
 
     def tick(self, render):
         """
@@ -260,7 +265,9 @@ class Human(Entity):
         :param spritesheet Name of spritesheet: if None, a random spritesheet is chosen
         :param spawn_index: The spawn at which the player will be spawned
         """
-        Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet)
+        Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet, world_interactions=True)
+
+        self.controller = ai.HumanController(self)
 
         self.interact_aabb = Rect(self.aabb)
         offset = self.rect.width / 4
@@ -294,27 +301,30 @@ class Human(Entity):
                 pass
 
     def wander(self):
-        self.controller = ai.RandomWanderer(self)
-
-
-class Player(Human):
-    def __init__(self, world):
-        Human.__init__(self, world, "business_man", 0)
-        self.controller = ai.PlayerController(self)
+        self.controller.add_behaviour(ai.RandomHumanWanderer(self))
 
 
 class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
-        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, can_leave_world=False)
+        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, clone_spritesheet=True, can_leave_world=False)
         self.controller = ai.VehicleController(self)
-        self.vertical_diagonal = False
+        # self.controller = ai.SimplePathFollower(self, constants.Speed.MAX)
 
         self.aabb.height /= 2
 
-        self.animator.spritesheet.set_colour((200, 0, 0))
+        self.animator.spritesheet.set_colour(self._random_colour())
 
         # todo should move to road spawn
         self.world.move_to_spawn(self, 0)
 
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
+
+    def _random_colour(self, alpha=255):
+        high = random.randrange(127) + 127
+        med = random.randrange(100) + 50
+        low = random.randrange(50)
+        c = [high, med, low]
+        random.shuffle(c)
+        c.append(alpha)
+        return c
