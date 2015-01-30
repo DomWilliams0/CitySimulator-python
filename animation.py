@@ -11,9 +11,9 @@ import util
 class BaseSpriteSheet:
     LOADED = {}
 
-    def __init__(self, path, width, height, length, animation_type, nickname=None):
+    def __init__(self, path, height, length, animation_type, nickname=None):
         self.nickname = path.split(os.sep)[-1][:-4] if not nickname else nickname
-        self.sprites = [[] * width for _ in xrange(height)]
+        self.sprites = [[] for _ in xrange(height)]
         self.sheet = pygame.image.load(path).convert_alpha()
         self.type = animation_type
         self.length = length
@@ -94,7 +94,7 @@ def load_all():
                 HumanSpriteSheet(path, (128, 128), (32, 32), 4)
 
             if d == "vehicles":
-                VehicleSpriteSheet(path, (128, 128), (32, 32), (64, 32), 2)
+                VehicleSpriteSheet(path, (128, 128), (32, 32), (64, 32), 4)
     logging.info("Loaded %d sprites" % len(BaseSpriteSheet.LOADED))
 
 
@@ -103,18 +103,29 @@ class HumanSpriteSheet(BaseSpriteSheet):
         """
         :param path: Absolute path
         :param sheet_dimensions: The pixel dimensions of the spritesheet ie (128, 128)
-        :param sprite_dimensions: The pixel dimensions of each sprite ie (32, 32)
+        :param sprite_dimensions: The pixel dimensions of each sprite ie (32, 32)z
         """
-        BaseSpriteSheet.__init__(self, path, 4, 4, length, constants.EntityType.HUMAN)
+        BaseSpriteSheet.__init__(self, path, 4, length, constants.EntityType.HUMAN)
         self._load_sprites(sheet_dimensions, sprite_dimensions, -1, 0)
 
 
 class VehicleSpriteSheet(BaseSpriteSheet):
     def __init__(self, path, sheet_dimensions, starting_dimensions, ending_dimensions, length):
-        BaseSpriteSheet.__init__(self, path, 2, 4, length, constants.EntityType.VEHICLE)
+        BaseSpriteSheet.__init__(self, path, 4, length, constants.EntityType.VEHICLE)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 0)
         self._load_sprites(sheet_dimensions, ending_dimensions, 2, 1)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 3)
+
+    def set_colour(self, colour):
+        for seq in self.sprites:
+            for sprite in seq:
+                pixels = pygame.PixelArray(sprite)
+                for x in xrange(sprite.get_width()):
+                    for y in xrange(sprite.get_height()):
+                        pix = sprite.unmap_rgb(pixels[x, y])
+                        if pix[3] != 255 and pix[3] != 0:
+                            mixed = (util.mix_colours([pix[3]] * 3, colour))
+                            pixels[x, y] = sprite.map_rgb(mixed)
 
 
 class HumanAnimator:
@@ -157,7 +168,7 @@ class HumanAnimator:
             sprite = self.spritesheet.sprites[self.sequence_index][0]
 
         speed = self._get_speed()
-        if speed != self.last_speed:
+        if speed != self.last_speed and speed % 1 == 0:
             self.last_speed = speed
             self.turn(self.sequence_index, starting_index=-1, speed=speed)
 
@@ -179,3 +190,40 @@ class HumanAnimator:
         step = 18.0 / speed if speed else 0
 
         self.walk_gen = self.spritesheet.get_sequence(step, index, starting_index)
+
+
+class VehicleAnimator(HumanAnimator):
+    def __init__(self, entity, spritesheet):
+        HumanAnimator.__init__(self, entity, spritesheet)
+        self.was_horizontal = self._is_horizontal(entity.direction)
+        self.last_direction = entity.direction
+
+    def _is_horizontal(self, direction):
+        return direction in constants.Direction.HORIZONTALS
+
+    def turn(self, index, starting_index=0, speed=-1):
+        try:
+            hor = self._is_horizontal(index)
+            if hor != self.was_horizontal:
+                if hor:
+                    self.entity.aabb.width *= 2
+                    self.entity.rect.width *= 2
+                else:
+                    self.entity.aabb.width /= 2
+                    self.entity.rect.width /= 2
+
+                    # can be exploited to move super fast :(
+                    # if self.last_direction == constants.Direction.EAST:
+                    # self.entity.aabb.x += self.entity.aabb.width
+
+            self.was_horizontal = hor
+            self.last_direction = self.entity.direction
+
+        except AttributeError:
+            pass
+
+        HumanAnimator.turn(self, index, starting_index, speed)
+
+    def tick(self):
+        HumanAnimator.tick(self)
+

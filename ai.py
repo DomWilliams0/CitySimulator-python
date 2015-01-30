@@ -6,36 +6,36 @@ import pygame
 import constants
 import entity
 import util
-import world as world_module
 from vec2d import Vec2d
-import animation
 
 
 _KEYS = [pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d]
+_VERTICAL_KEYS = [_KEYS[0], _KEYS[2]]
 
 
 class BaseController:
-    def __init__(self, the_entity, speed):
+    def __init__(self, the_entity, speed=None):
         self.entity = the_entity
         self.speed = constants.Speed.SLOW if speed is None else speed
+        self.boost_speed = constants.Speed.FAST if self.speed < constants.Speed.FAST else constants.Speed.MAX
         self.boost = False
         self.wasd = OrderedDict()
-        
+
         for k in _KEYS:
             self.wasd[k] = False
-        
+
     def tick(self):
         pass
-            
+
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
             self.handle(event.type == pygame.KEYDOWN, event.key)
-            
+
     def handle(self, keydown, key):
         if key == pygame.K_LSHIFT:
             self.boost = not self.boost
             self._move_entity()
-        
+
         elif key in self.wasd.keys():
             self.wasd[key] = keydown
             self._move_entity()
@@ -49,28 +49,40 @@ class BaseController:
             value.controller = self
         self.__dict__[key] = value
 
-    def _get_direction(self, neg, pos):
-        n = self.wasd[neg]
-        p = self.wasd[pos]
-        speed = constants.Speed.FAST if self.boost else self.speed
-        return 0 if n == p else -speed if n else speed
-        
+    def _get_direction(self, vertical):
+        n = self._key_from_index(0 if vertical else 1)
+        p = self._key_from_index(2 if vertical else 3)
+        return 0 if n == p else -1 if n else 1
+
+    def _get_speed(self):
+        return self.boost_speed if self.boost else self.speed
+
     def _move_entity(self):
-        keys = self.wasd.keys()
-        self.entity.velocity.x = self._get_direction(keys[1], keys[3])
-        self.entity.velocity.y = self._get_direction(keys[0], keys[2])
+        speed = self._get_speed()
+        self.entity.velocity.x = self._get_direction(False) * speed
+        self.entity.velocity.y = self._get_direction(True) * speed
+
+    def _key_from_index(self, i):
+        return self.wasd[_KEYS[i]]
+
+    def _direction_from_key(self, key):
+        if key in _VERTICAL_KEYS:
+            return constants.Direction.NORTH if key == _KEYS[0] else constants.Direction.SOUTH
+        else:
+            return constants.Direction.WEST if key == _KEYS[1] else constants.Direction.WEST
 
 
 class PlayerController(BaseController):
-    def __init__(self, the_entity, speed=None):
-        BaseController.__init__(self, the_entity, speed)
-        
+    """
+    Used for other player input, such as inventory
+    """
+
     def handle(self, keydown, key):
         BaseController.handle(self, keydown, key)
-    
+
         # debug keys
         try:
-            if keydown:     
+            if keydown:
                 if key == pygame.K_SPACE:
                     self.speed = random.choice(constants.Speed.VALUES)
                     self._move_entity()
@@ -86,25 +98,93 @@ class PlayerController(BaseController):
                     h = entity.Human(self.entity.world)
                     h.wander()
                     h.move_entity(*self.entity.rect.center)
+
+                if key == pygame.K_h:
+                    v = entity.Vehicle(self.entity.world)
+                    v.move_entity(*self.entity.rect.center)
         except AttributeError:
             pass
 
 
 class VehicleController(BaseController):
     def __init__(self, vehicle):
-        BaseController.__init__(self, vehicle, constants.Speed.MAX)
-    
+        BaseController.__init__(self, vehicle, constants.Speed.VEHICLE_MIN)
+
+        self._keystack = util.Stack()
+        self._lasttop = None
+
+        self._brake_force = 1
+        assert 1 >= self._brake_force >= 0
+        self.braking = True
+
+        self.current_speed = 0
+        self.acceleration = 1.03
+        self.max_speed = constants.Speed.VEHICLE_MAX
+
+        self.last_pos = self.entity.aabb.topleft
+
+    def _get_speed(self):
+        if self.entity.is_moving() and util.distance_sqrd(self.entity.aabb.topleft, self.last_pos) < self.acceleration:
+            self.current_speed = 0
+            print "hit!"
+            # todo: register hit
+
+        return self.current_speed
+
     def tick(self):
-        # maintain speed if key is pressed, otherwise slow down/friction
-        pass
-    
+        current = self._keystack.top
+
+        # todo: only change direction to opposite if stopped, otherwise brake
+
+        # no input
+        self.braking = current is None
+        if not self.braking:
+            self._brake_force = 1
+        elif self.entity.is_moving():
+            self._brake_force *= 0.995
+
+        # input
+        if current is not None:
+            for k, v in self.wasd.items():
+                self.wasd[k] = (k == current)
+
+            # starting to move
+            if not self.current_speed:
+                self.current_speed = self.acceleration * (2 / constants.DELTA)  # start with 1 seconds worth of acceleration
+            else:
+                self.current_speed *= self.acceleration
+
+            # limit to max speed
+            if self.current_speed > self.max_speed:
+                self.current_speed = self.max_speed
+
+        self._move_entity()
+        self.last_pos = self.entity.aabb.topleft
+
+    def _move_entity(self):
+        if self.braking:
+            self.entity.velocity *= self._brake_force
+            if self.entity.velocity and self.entity.velocity.get_length_sqrd() < constants.TILE_SIZE_SQRD:
+                self.halt()
+        else:
+            BaseController._move_entity(self)
+
     def handle(self, keydown, key):
-        # if current direction: speed up, else slow down
-        pass
-        
+        if key in _KEYS:
+            last_top = self._keystack.top
+            if keydown:
+                self._keystack.push(key)
+            else:
+                self._keystack.remove_item(key)
+
+            if last_top != self._keystack.top:
+                self._lasttop = last_top
+
     def halt(self):
-        # apply other direction until stopped
-        pass
+        BaseController.halt(self)
+        self.entity.velocity.zero()
+        self.current_speed = 0
+
 
 class RandomWanderer(BaseController):
     def __init__(self, the_entity):
@@ -141,7 +221,7 @@ class _PathFinder:
         self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
 
     def find_path(self, goal, path_follower):
-        # ah fuck...a*?
+        # ah fuck, what now
         pass
 
     # noinspection PyMethodMayBeStatic

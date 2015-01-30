@@ -1,25 +1,24 @@
 import random
 
-from util import Rect
 from pygame.sprite import Sprite
 from pygame.surface import Surface
 
+from util import Rect
 import ai
 import animation
 import constants
 import util
 from vec2d import Vec2d
-import world as world_module
 
 
 class Entity(Sprite):
     """
     A Sprite with an image, position, velocity and aabb
     """
-    
+
     _LASTID = 0
 
-    def __init__(self, dimensions, world, entitytype, spritesheet=None, loc=None, world_collisions=True, can_leave_world=False):
+    def __init__(self, dimensions, world, entitytype, spritesheet=None, loc=None, world_collisions=True, world_interactions=False, can_leave_world=False):
         """
         :param dimensions Dimensions of the sprite
         :param loc Starting position, defaults to a random location in the world
@@ -30,32 +29,34 @@ class Entity(Sprite):
         self.image = Surface(dimensions).convert()
         self.rect = Rect(self.image.get_rect())
         self.aabb = Rect(self.rect)
-        
+
         self.world = world
         world.spawn_entity(self, loc)
 
         self.velocity = Vec2d(0, 0)
 
         self.world_collisions = world_collisions
+        self.world_interactions = world_interactions
         self.can_leave_world = can_leave_world
 
         self.dead = False
         self.visible = True
-        
+
         self.id = Entity._LASTID
         Entity._LASTID += 1
-        
+
         self.direction = constants.Direction.SOUTH
+        self.vertical_diagonal = True
         self.controller = None
-        
+
         spritesheet = animation.get_random(entitytype) if not spritesheet else animation.get(spritesheet)
-        self.animator = animation.HumanAnimator(self, spritesheet)
-    
+        animator_cls = animation.HumanAnimator if spritesheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
+        self.animator = animator_cls(self, spritesheet)
+
     def tick(self, render):
         """
         Called per frame
         """
-
         if self.controller:
             self.controller.tick()
 
@@ -78,7 +79,7 @@ class Entity(Sprite):
         if delta[1] < 0:
             delta[1] += 1
         """
-            
+
         self.aabb.add_vector(delta)
         self.catchup_aab()
 
@@ -110,26 +111,37 @@ class Entity(Sprite):
             if dx != 0 or dy != 0:
                 c = self.aabb.center
                 self.move_entity(c[0] + dx, c[1] + dy)
-        
-        self.handle_interactions()
-        
-        
+
+        if self.world_interactions:
+            self.handle_interactions()
+
     def _update_direction(self):
         """
         If necessary, changes the compass direction that the entity is facing
         """
         if self.is_moving():
             angle = self.velocity.get_angle()
-
             new_direction = self.direction
-            if angle == 0:
-                new_direction = constants.Direction.EAST
-            elif angle == 180:
-                new_direction = constants.Direction.WEST
-            elif 0 > angle > -180:
-                new_direction = constants.Direction.NORTH
-            elif 0 < angle < 180:
-                new_direction = constants.Direction.SOUTH
+
+            # If true, the entity will look north/south when walking diagonally, otherwise east/west
+            if self.vertical_diagonal:
+                if angle == 0:
+                    new_direction = constants.Direction.EAST
+                elif angle == 180:
+                    new_direction = constants.Direction.WEST
+                elif 0 > angle > -180:
+                    new_direction = constants.Direction.NORTH
+                elif 0 < angle < 180:
+                    new_direction = constants.Direction.SOUTH
+            else:
+                if angle == 90:
+                    new_direction = constants.Direction.SOUTH
+                elif angle == -90:
+                    new_direction = constants.Direction.NORTH
+                elif 90 < angle <= 180 or -90 > angle >= -180:
+                    new_direction = constants.Direction.WEST
+                elif 0 <= angle < 90 or 0 >= angle >= -90:
+                    new_direction = constants.Direction.EAST
 
             if new_direction != self.direction:
                 self.turn(new_direction)
@@ -139,7 +151,7 @@ class Entity(Sprite):
         Moves positional rect to collision-corrected aabb
         """
         self.rect.center = self.aabb.center
-        
+
     def turn(self, direction):
         """
         Updates compass direction of Human and animator
@@ -165,17 +177,18 @@ class Entity(Sprite):
         Corrects any collisions with the world
         """
         rects = self.world.get_colliding_blocks(self.aabb)
+        if not self.world_interactions:
+            rects.extend(self.world.get_colliding_blocks(self.aabb, True))
+
         half = constants.TILE_SIZE / 2
         half_dim = half, half
-        
+
         for rect in rects:
             r = rect[0]  # strip the dimensions
             if rect[1] != constants.DIMENSION:
-                half_tile = rect[1][0]/2, rect[1][1]/2
+                half_tile = rect[1][0] / 2, rect[1][1] / 2
             else:
                 half_tile = half_dim
-            
-            block = self.world.get_solid_block(*util.pixel_to_tile(r))
 
             # resolve collision
             center_a = self.aabb.center
@@ -200,13 +213,13 @@ class Entity(Sprite):
                 self.aabb.y += y_overlap
             else:
                 self.aabb.x += x_overlap
-        
-        self.catchup_aab() # todo test
-        
+
+        self.catchup_aab()
+
     def handle_interactions(self):
         pass
-        
-    def interact_with_block(self, block, x, y):
+
+    def interact_with_block(self, block, x, y):  # todo redundant
         block.interact(self, x, y)
 
     def move_entity(self, x, y):
@@ -235,14 +248,12 @@ class Entity(Sprite):
         """
         ran = lambda: speed * (-1 if random.random() < 0.5 else 1 if random.random() < 0.5 else 0)
         return Vec2d(ran(), ran())
-        
-    def __repr__(self):
-    	return "{%s: %d}" % (str(self.__class__).split('.')[1][:-2], self.id)
 
+    def __repr__(self):
+        return "{%s: %d}" % (str(self.__class__).split('.')[1][:-2], self.id)
 
 
 class Human(Entity):
-
     def __init__(self, world, spritesheet=None, spawn_index=0):
         """
         :param world: The world this Human should be added to
@@ -251,16 +262,17 @@ class Human(Entity):
         """
         Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet)
 
-        self.aabb.height /= 2
-        self.aabb.inflate(-6, 0)
         self.interact_aabb = Rect(self.aabb)
-
         offset = self.rect.width / 4
         self.interact_aabb.width -= offset * 2
         self.interact_aabb.x += offset
+        self.interact_aabb.height *= 0.6
+
+        self.aabb.height /= 2
+        self.aabb.inflate(-6, 0)
 
         self.world.move_to_spawn(self, spawn_index)
-        
+
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
         try:
@@ -270,7 +282,6 @@ class Human(Entity):
 
     def handle_interactions(self):
         rects = self.world.get_colliding_blocks(self.interact_aabb, interactables=True)
-        half_tile = constants.TILE_SIZE / 2
         buildings = set()
         for rect in rects:
             r = rect[0]
@@ -280,7 +291,7 @@ class Human(Entity):
                     buildings.add(block)
                     self.interact_with_block(block, *r)
             except AttributeError:
-                pass                
+                pass
 
     def wander(self):
         self.controller = ai.RandomWanderer(self)
@@ -290,11 +301,20 @@ class Player(Human):
     def __init__(self, world):
         Human.__init__(self, world, "business_man", 0)
         self.controller = ai.PlayerController(self)
-        
+
+
 class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
-        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, can_leave_world=True)
+        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, can_leave_world=False)
         self.controller = ai.VehicleController(self)
-        
-        # debug
+        self.vertical_diagonal = False
+
+        self.aabb.height /= 2
+
+        self.animator.spritesheet.set_colour((200, 0, 0))
+
+        # todo should move to road spawn
         self.world.move_to_spawn(self, 0)
+
+    def catchup_aab(self):
+        self.rect.center = self.aabb.midtop

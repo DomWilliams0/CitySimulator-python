@@ -18,7 +18,7 @@ class Game:
         clock = pygame.time.Clock()
         while self.running:
             constants.DELTA = (clock.tick(60) / 1000.0)
-            state = constants.STATEMANAGER.current
+            state = constants.STATEMANAGER.get_current()
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):

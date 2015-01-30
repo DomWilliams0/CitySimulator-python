@@ -1,12 +1,14 @@
+import random
+import logging
+
 import pygame
 
 import ai
 import event as event_module
 import animation
 import constants
-from entity import Human, Player, Vehicle
+from entity import Human, Vehicle
 import world as world_module
-import random
 import util
 
 
@@ -57,17 +59,19 @@ class ZoomTransition(Transition):
 
 class StateManager:
     def __init__(self):
-        self._stack = []
-        self.current = None
-        self.human_controller = ai.PlayerController(None)
+        self._stack = util.Stack()
+        self.player_controller = None
         self.transition = None
 
-    def change_state(self, new_state=None, transition_cls=ZoomTransition if random.random() < 0.5 else FadeTransition):
+    def change_state(self, new_state=None, transition_cls=None):
         """
         Switches to another state
         :param new_state: The state to switch to, or None to return to the previous
         :param transition_cls: Optional transition class between the states
         """
+        if transition_cls is None:
+            transition_cls = ZoomTransition if random.random() < 0.5 else FadeTransition
+
         try:
             self.transition = transition_cls()
         except TypeError:
@@ -78,36 +82,30 @@ class StateManager:
         # pop
         if not new_state:
             old_state = self._stack.pop()
-            self.current = self._stack[-1]
 
         # push
         else:
-            try:
-                old_state = self._stack[-1]
-            except IndexError:
-                pass
-
-            self._stack.append(new_state)
-            self.current = new_state
+            self._stack.push(new_state)
 
         if old_state:
             old_state.on_unload()
 
-        self.current.on_load()
+        current = self._stack.top
+        current.on_load()
 
         # mouse visibility
-        pygame.mouse.set_visible(self.current.mouse_visible)
+        pygame.mouse.set_visible(current.mouse_visible)
 
         # update camera boundaries
-        if self.current.world:
-            constants.SCREEN.camera.update_boundaries(self.current.world)
+        if current.world:
+            constants.SCREEN.camera.update_boundaries(current.world)
 
     def handle_user_event(self, e):
         if hasattr(e, "entity"):
             # prevent world transfer flicker
             e.entity.visible = True
 
-            if e.entity == self.human_controller.entity:
+            if e.entity == self.player_controller.entity:
                 # building enter/exit
                 if hasattr(e, "building"):
                     building = e.building
@@ -125,6 +123,17 @@ class StateManager:
                 self.transition = None
         except AttributeError:
             pass
+
+    def transfer_control(self, entity):
+        if not entity:
+            self.player_controller = None
+        else:
+            cls = ai.PlayerController if isinstance(entity, Human) else ai.VehicleController
+            self.player_controller = cls(entity)
+            constants.SCREEN.camera.target = entity
+
+    def get_current(self):
+        return self._stack.top
 
 
 class State:
@@ -147,8 +156,8 @@ class State:
         """
         Processes events
         """
-        controller = constants.STATEMANAGER.human_controller
-        if controller.entity:
+        controller = constants.STATEMANAGER.player_controller
+        if controller:
             controller.handle_event(event)
 
     def tick(self):
@@ -156,7 +165,7 @@ class State:
         Called per frame
         """
         for w in world_module.WORLDS:
-            w.tick(render=w == self.world)
+            w.tick(render=(w == self.world))
 
     def on_load(self):
         """
@@ -178,26 +187,31 @@ class GameState(State):
 
         # load spritesheets
         animation.load_all()
-        
+
         # load main world, with all buildings
         self.world = world_module.World.load_tmx("world.tmx")
+        logging.info("Loaded %d worlds" % len(world_module.WORLDS))
 
-        constants.STATEMANAGER.human_controller.entity = Human(self.world)  # debug creates a new human and follows him
         constants.SCREEN.set_camera_world(self.world)
-        constants.SCREEN.camera.target = constants.STATEMANAGER.human_controller.entity
+        # constants.STATEMANAGER.human_controller.entity = Human(self.world)  # debug creates a new human and follows him
+        # constants.SCREEN.camera.target = constants.STATEMANAGER.human_controller.entity
 
         # render worlds
         for w in world_module.WORLDS:
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(2):
+        for _ in xrange(8):
             h = Human(self.world)
             h.wander()
-            
+
         # add some vehicles
         for _ in xrange(0):
             v = Vehicle(self.world)
+
+        # debug vehicle to control
+        v = Vehicle(self.world)
+        constants.STATEMANAGER.transfer_control(v)
 
     def tick(self):
         State.tick(self)
@@ -210,8 +224,8 @@ class GameState(State):
                 for b in w.buildings:
                     for _ in xrange(random.randrange(2, 6)):
                         b.set_window(random.choice(b.windows.keys()), random.random() < 0.5)
-                                     
-                        
+
+
 class BuildingState(State):
     def __init__(self, building):
         State.__init__(self, mouse_visible=False)

@@ -1,4 +1,5 @@
 import os
+import random
 
 from pygame.rect import Rect as pygame_Rect
 
@@ -103,6 +104,17 @@ def distance_sqrd(p1, p2):
     return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
 
 
+def mix_colours(c1, c2, ensure_alpha=True):
+    mixed = [(a + b) / 2 for a, b in zip(c1, c2)]
+    if ensure_alpha and len(mixed) == 3:
+        mixed.append(255)
+    return mixed
+
+
+def random_colour(alpha=255):
+    return random.randrange(127) + 127, random.randrange(127) + 127, random.randrange(127) + 127, alpha
+
+
 class Rect:
     def __init__(self, *args):
         l = len(args)
@@ -182,4 +194,33 @@ class Rect:
             return arg
 
     def __str__(self):
-        return "Rect{(%.1f, %.1f), (%.1f, %.1f)}" % (self.x, self.y, self.width, self.height)    
+        return "Rect{(%.1f, %.1f), (%.1f, %.1f)}" % (self.x, self.y, self.width, self.height)
+
+
+class Stack:
+    def __init__(self):
+        self._data = []
+        self.top = None
+
+    def pop(self):
+        pop = self._data.pop()
+        self._set_top()
+        return pop
+
+    def remove_item(self, x):
+        self._data.remove(x)
+        if x == self.top:
+            self._set_top()
+
+    def push(self, x):
+        self._data.append(x)
+        self.top = x
+
+    def __repr__(self):
+        return str(self._data)
+
+    def _set_top(self):
+        try:
+            self.top = self._data[-1]
+        except IndexError:
+            self.top = None

@@ -1,11 +1,13 @@
+import logging
+import random
+
 import pygame
 
 import state
 from vec2d import Vec2d
 import world as world_module
-import logging
-import random
 import util
+
 
 class GameScreen:
     """
@@ -25,7 +27,6 @@ class GameScreen:
         pygame.display.set_caption("flibbid")
         self.font = pygame.font.SysFont("monospace", 20, bold=True)
 
-        LOGGER = logging.getLogger("SimulatorGame")
         logging.basicConfig(level=logging.INFO)
 
     def set_camera_world(self, world):
@@ -41,14 +42,14 @@ class GameScreen:
         """
         self._window.fill(colour)
 
-    def draw_rect(self, rect, color=(255, 0, 0), filled=True):
+    def draw_rect(self, rect, colour=(255, 0, 0), filled=True):
         """
         :param rect: The rectangle to draw
-        :param color: Optional colour, defaults to red
+        :param colour: Optional colour, defaults to red
         :param filled: Outlined if False
         """
         dim = (rect[1][0], rect[1][1]) if len(rect) == 2 else (rect.width, rect.height)
-        pygame.draw.rect(self._window, color, (self.camera.apply_rect(rect), dim), 0 if filled else 2)
+        pygame.draw.rect(self._window, colour, (self.camera.apply_rect(rect), dim), 0 if filled else 2)
 
     def draw_sprite(self, sprite, loc):
         """
@@ -59,20 +60,13 @@ class GameScreen:
     def draw_block(self, block, loc, surface=None):
         image = world_module.Block.HELPER.block_images[block.render_id]
         s = surface if surface else self._window
-        #if camera_adjust:
-         #   loc = self.camera.apply_rect(loc)
         s.blit(image, loc)
-        #print "blitted at", self.camera.apply_rect(loc)
-        #if surface is None:
-        #    self._window.blit(image, self.camera.apply_rect(loc))
-        #else:
-        #    surface.blit(image, self.camera.apply_rect(loc))
 
-    def draw_line(self, start, end, color=(255, 20, 20)):
+    def draw_line(self, start, end, colour=(255, 20, 20)):
         """
         Draws a line between the given points
         """
-        pygame.draw.line(self._window, color, self.camera.apply(start), self.camera.apply(end), 1)
+        pygame.draw.line(self._window, colour, self.camera.apply(start), self.camera.apply(end), 1)
 
     def draw_circle(self, pos, colour=(0, 255, 100), radius=10, filled=True):
         """
@@ -142,6 +136,8 @@ class Camera:
         :param target If None, then the current target
         """
         if not target:
+            if not self.target:
+                return
             target = self.target
 
         self.pos += self._direction_to_target(target.rect.center)
@@ -183,13 +179,21 @@ class Camera:
 
         self._check_boundaries()
 
+    def __setattr__(self, key, value):
+        self.__dict__[key] = value
+        if key == "target":
+            self.centre(value)
 
-# todo bring direction here too, and then import * height 
+
 class Speed:
     SLOW = 80
     MEDIUM = 120
     FAST = 180
     MAX = 240
+
+    VEHICLE_MIN = 200
+    VEHICLE_MAX = 400
+
     WTF_DEBUG = 800
 
     VALUES = [SLOW, MEDIUM, FAST]
@@ -197,29 +201,35 @@ class Speed:
     @staticmethod
     def random():
         return random.choice(Speed.VALUES)
-    
-    
+
+
 class Direction:
     SOUTH = 0
     WEST = 1
     EAST = 2
     NORTH = 3
-    
+
     VALUES = [SOUTH, WEST, EAST, NORTH]
     HORIZONTALS = [WEST, EAST]
     VERTICALS = [SOUTH, NORTH]
-    
+
     @staticmethod
     def random():
         return random.choice(Direction.VALUES)
-    
-    
+
+    @staticmethod
+    def opposite(direction):
+        if direction in Direction.HORIZONTALS:
+            return Direction.EAST if direction == Direction.WEST else Direction.WEST
+        else:
+            return Direction.SOUTH if direction == Direction.NORTH else Direction.SOUTH
+
+
 class EntityType:
     HUMAN = 0
     VEHICLE = 1
 
 
-LOGGER = logging.getLogger("SimulatorGame")
 STATEMANAGER = state.StateManager()
 SCREEN = GameScreen()
 DELTA = 0
@@ -227,6 +237,7 @@ FPS = 0
 WINDOW_SIZE = (640, 640)
 WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
 
-TILE_SIZE = 32
 TILESET_RESOLUTION = 16
+TILE_SIZE = 32
 DIMENSION = (TILE_SIZE, TILE_SIZE)
+TILE_SIZE_SQRD = TILE_SIZE ** 2
