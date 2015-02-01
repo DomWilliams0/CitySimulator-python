@@ -6,6 +6,9 @@ import constants
 import world as world_module
 
 
+_SURROUNDING_OFFSETS = (-1, 0), (1, 0), (0, 1), (0, -1)
+
+
 def get_relative_path(path):
     """
     :param path: Relative path in resources dir, separated by /
@@ -61,7 +64,14 @@ def pixel_to_tile(pos):
 
 
 def tile_to_pixel(pos):
-    return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
+    if isinstance(pos, Rect):
+        pos = Rect(pos)
+        for a in ('x', 'y', 'width', 'height'):
+            setattr(pos, a, getattr(pos, a) * constants.TILE_SIZE)
+        return pos
+
+    else:
+        return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
 
 
 def parse_orientation(char):
@@ -108,6 +118,14 @@ def mix_colours(c1, c2, ensure_alpha=True):
     if ensure_alpha and len(mixed) == 3:
         mixed.append(255)
     return mixed
+
+
+def get_surrounding_offsets():
+    return _SURROUNDING_OFFSETS
+
+
+def modify_attr(obj, attribute, func):
+    setattr(obj, attribute, func(getattr(obj, attribute)))
 
 
 class Rect:
@@ -170,6 +188,12 @@ class Rect:
         r = self._tuple_from_arg(r)
         return self.x + self.width > r[0] and r[0] + r[2] > self.x and self.y + self.height > r[1] and r[1] + r[3] > self.y
 
+    def collidepoint(self, p):
+        return self.x <= p[0] < self.x + self.width and self.y <= p[1] < self.y + self.height
+
+    def area(self):
+        return self.width * self.height
+
     def inflate(self, x, y):
         self.x -= x / 2
         self.y -= y / 2
@@ -191,11 +215,19 @@ class Rect:
     def __str__(self):
         return "Rect{(%.1f, %.1f), (%.1f, %.1f)}" % (self.x, self.y, self.width, self.height)
 
+    __repr__ = __str__
+
 
 class Stack:
-    def __init__(self):
+    def __init__(self, *initvalues):
         self._data = []
         self.top = None
+
+        for v in initvalues:
+            self.push(v)
+
+    def __nonzero__(self):
+        return bool(self._data)
 
     def pop(self):
         pop = self._data.pop()

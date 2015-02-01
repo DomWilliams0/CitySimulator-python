@@ -38,10 +38,14 @@ class BaseController:
         elif not suppress and self._behaviours.top is None:
             self.remove_current_behaviour()
 
+    def _tick_current_behaviour(self):
+        top_exists = self._behaviours.top is not None
+        if top_exists:
+            self._behaviours.top.tick()
+        return top_exists
 
     def tick(self):
-        if self._behaviours.top:
-            self._behaviours.top.tick()
+        self._tick_current_behaviour()
 
     def handle_event(self, event):
         if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
@@ -125,13 +129,16 @@ class HumanController(BaseController):
 class VehicleController(BaseController):
     def __init__(self, vehicle):
         BaseController.__init__(self, vehicle, constants.Speed.VEHICLE_MIN)
+        # self.add_behaviour(SimpleVehicleFollower(vehicle))
+        # todo: add new sub-behaviour to go towards a target, then use for path follower
+        # todo also base human movement on vehicle, instead of setting velocity directly
 
         self._keystack = util.Stack()
         self._lasttop = None
 
         self._brake_force = 1
         assert 0 <= self._brake_force <= 1
-        self.braking = True
+        self._braking = True
 
         self.current_speed = 0
         self.acceleration = 1.03
@@ -142,18 +149,20 @@ class VehicleController(BaseController):
     def _get_speed(self):
         if self.entity.is_moving() and util.distance_sqrd(self.entity.aabb.topleft, self.last_pos) < self.acceleration:
             self.current_speed = 0
-            print "hit!"  # todo: this should only fire once
+            # todo: crash - this should only fire once
 
         return self.current_speed
 
     def tick(self):
-        current = self._keystack.top
 
+        self._tick_current_behaviour()
+
+        current = self._keystack.top
         # todo: only change direction to opposite if stopped, otherwise brake
 
         # no input
-        self.braking = current is None
-        if not self.braking:
+        self.set_braking(current is None)
+        if not self._braking:
             self._brake_force = 1
         elif self.entity.is_moving():
             self._brake_force *= 0.995
@@ -165,7 +174,7 @@ class VehicleController(BaseController):
 
             # starting to move
             if not self.current_speed:
-                self.current_speed = self.acceleration * (2 / constants.DELTA)  # start with 1 seconds worth of acceleration
+                self.current_speed = self.acceleration * (2 / constants.DELTA)  # start with 2 seconds worth of acceleration
             else:
                 self.current_speed *= self.acceleration
 
@@ -177,7 +186,7 @@ class VehicleController(BaseController):
         self.last_pos = self.entity.aabb.topleft
 
     def _move_entity(self):
-        if self.braking:
+        if self._braking:
             self.entity.velocity *= self._brake_force
             if self.entity.velocity and self.entity.velocity.get_length_sqrd() < constants.TILE_SIZE_SQRD:
                 self.halt()
@@ -187,7 +196,7 @@ class VehicleController(BaseController):
     def handle(self, keydown, key):
         if key in _KEYS:
             last_top = self._keystack.top
-            if keydown:
+            if keydown and key != last_top:
                 self._keystack.push(key)
             else:
                 self._keystack.remove_item(key)
@@ -199,6 +208,13 @@ class VehicleController(BaseController):
         BaseController.halt(self)
         self.entity.velocity.zero()
         self.current_speed = 0
+
+    def set_braking(self, braking):
+        self._braking = braking
+
+    def accelerate_in_direction(self, direction):
+        key = _KEYS[constants.Direction.KEY_ORDER.index(direction)]
+        self.handle(True, key)
 
 
 class BaseBehaviour:
@@ -217,7 +233,7 @@ class RandomHumanWanderer(BaseBehaviour):
     def __init__(self, the_entity):
         # BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
         BaseBehaviour.__init__(self, the_entity)
-        self.last_press = 0
+        self.last_press = 0 # todo: measure with time instead
         self.keys = {}
 
     def tick(self):
@@ -279,19 +295,22 @@ class SimpleVehicleFollower(BaseBehaviour):
                         stack.add((x, y + 1))
             return results
 
-    def __init__(self, the_entity):
+    def __init__(self, vehicle):
         """
         :param speed: The starting constants.Speed at which the entity will move
         """
-        BaseBehaviour.__init__(self, the_entity)
+        BaseBehaviour.__init__(self, vehicle)
+        assert isinstance(vehicle, entity.Vehicle)
 
         self.points = []
-        self.current_goal = self._next_point()
 
         # finder = _PathFinder(the_entity.world, util.pixel_to_tile(the_entity.rect.center), (23, 6), world.BlockType.PAVEMENT_C)
-
+        # debug test
+        self.add_point(5, 8)
         self.add_point(33, 8)
         self.add_point(36, 28)
+
+        self.current_goal = self._next_point()
         self.following = True
 
     def add_point(self, tilex, tiley):
@@ -308,10 +327,6 @@ class SimpleVehicleFollower(BaseBehaviour):
         return p
 
     def tick(self):
-        """
-        Sets the velocity of the entity, in order to walk directly towards its next goal
-        It is pushed once in the right direction; its velocity is only updated when it reaches a goal
-        """
         pos = self.entity.rect.center
 
         # debug draw nodes
@@ -321,29 +336,20 @@ class SimpleVehicleFollower(BaseBehaviour):
         if not self.following:
             return
 
-        if not self.current_goal or self._reached_goal(pos):
+        # drive towards
+        if not self._reached_goal(pos):
+            direction = Vec2d(self.current_goal[0] - pos[0], self.current_goal[1] - pos[1])
+            angle = direction.get_angle()
+            halfangle = util.round_to_multiple(angle, 45)
+
+        else:
+            self.controller.halt()
             self.current_goal = self._next_point()
-            # print("switched to", self.current_goal, self.points)
-
-            # new goal
-            if self.current_goal:
-                goal = self.current_goal
-                direction = Vec2d(goal[0] - pos[0], goal[1] - pos[1])
-
-                angle = util.round_to_multiple(direction.get_angle(), 45)
-                # new_vel = Vec2d.from_angle(angle, self.speed)
-                # self.entity.velocity = new_vel
-
-            # end goal reached
-            else:
-                self.entity.velocity.zero()
+            if not self.current_goal:  # complete
                 self.following = False
-                return
 
-        constants.SCREEN.draw_line(pos, self.current_goal)
+        if self.current_goal:
+            constants.SCREEN.draw_line(pos, self.current_goal)
 
-    def _reached_goal(self, pos, threshold=2):
-        x = abs(pos[0] - self.current_goal[0])
-        y = abs(pos[1] - self.current_goal[1])
-        dist_squared = x * x + y * y
-        return dist_squared < constants.TILE_SIZE / threshold ** 2
+    def _reached_goal(self, pos):
+        return util.distance_sqrd(pos, self.current_goal) < constants.TILE_SIZE_SQRD * 2

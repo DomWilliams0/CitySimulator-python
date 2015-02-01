@@ -308,7 +308,6 @@ class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
         Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, clone_spritesheet=True, can_leave_world=False)
         self.controller = ai.VehicleController(self)
-        # self.controller = ai.SimplePathFollower(self, constants.Speed.MAX)
 
         self.aabb.height /= 2
 

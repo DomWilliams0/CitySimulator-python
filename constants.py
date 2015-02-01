@@ -75,6 +75,9 @@ class GameScreen:
         camera_apply = tuple(map(int, self.camera.apply(pos)))
         pygame.draw.circle(self._window, colour, camera_apply, radius, 0 if filled else 2)
 
+    def draw_circle_in_tile(self, pos, colour=(0, 255, 100), radius=10, filled=True):
+        self.draw_circle((pos[0] + TILE_SIZE / 2, pos[1] + TILE_SIZE / 2), colour, radius, filled)
+
     def draw_fps(self, fps, offset=20):
         """
         Draws the given number at the bottom left of the screen, with the given offset
@@ -156,6 +159,8 @@ class Camera:
         """
         if not isinstance(rect, util.Rect):
             rect = rect[0]
+        else:
+            rect = rect.x, rect.y
         return self.apply(rect)
 
     def apply(self, tup):
@@ -212,6 +217,7 @@ class Direction:
     VALUES = [SOUTH, WEST, EAST, NORTH]
     HORIZONTALS = [WEST, EAST]
     VERTICALS = [SOUTH, NORTH]
+    KEY_ORDER = [NORTH, WEST, SOUTH, EAST]
 
     @staticmethod
     def random():

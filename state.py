@@ -212,7 +212,7 @@ class GameState(State):
         for _ in xrange(8):
             h = Human(self.world)
             h.wander()
-            constants.STATEMANAGER.transfer_control(h)
+            # constants.STATEMANAGER.transfer_control(h)
 
         # add some vehicles
         for _ in xrange(0):
@@ -221,7 +221,7 @@ class GameState(State):
         # debug vehicle to control
         v = Vehicle(self.world)
         # constants.STATEMANAGER.follow_with_camera(v)
-        # constants.STATEMANAGER.transfer_control(v)
+        constants.STATEMANAGER.transfer_control(v)
 
     def tick(self):
         State.tick(self)
