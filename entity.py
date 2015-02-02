@@ -1,3 +1,4 @@
+import logging
 import random
 
 from pygame.sprite import Sprite
@@ -53,7 +54,12 @@ class Entity(Sprite):
         self.controller = None
 
         shared_sheet = animation.get_random(entitytype) if not spritesheet else animation.get(spritesheet)
-        animator_cls = animation.HumanAnimator if shared_sheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
+        try:
+            animator_cls = animation.HumanAnimator if shared_sheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
+        except AttributeError:
+            logging.log(logging.FATAL, "Spritesheet failed to load")
+            exit(-1)
+            return
 
         ssheet = shared_sheet if not clone_spritesheet else animation.clone(shared_sheet)
         self.animator = animator_cls(self, ssheet)

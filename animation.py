@@ -55,9 +55,9 @@ class BaseSpriteSheet:
             rect.y += sprite_dimensions[1]
             rect.x = 0
 
-    def get_sequence(self, animation_step, index, starting_index=0):
+    def get_sequence(self, animator, index, starting_index=0):
         """
-        :param animation_step: Seconds between each frame
+        :param animator: The animator
         :param index: Animation sequence index
         :param starting_index: Starting frame in sequence
         :return: A generator function that loops the animation
@@ -71,7 +71,7 @@ class BaseSpriteSheet:
                 i = 0
             yield sequence[i], i
             delta += constants.DELTA
-            if delta >= animation_step:
+            if delta >= animator.animation_step:
                 delta = 0
                 i += 1
 
@@ -151,6 +151,7 @@ class HumanAnimator:
         self.entity = entity
         self.spritesheet = spritesheet
 
+        self.animation_step = 0
         self.sequence_index = 0
         self.walk_gen = None
         self.current_frame = 0
@@ -182,9 +183,10 @@ class HumanAnimator:
             sprite = self.spritesheet.sprites[self.sequence_index][0]
 
         speed = self._get_speed()
-        if speed != self.last_speed and speed % 1 == 0:
+        # if speed != self.last_speed and speed % 1 == 0:
+        if speed != self.last_speed:
             self.last_speed = speed
-            self.turn(self.sequence_index, starting_index=-1, speed=speed)
+            self.animation_step = 18.0 / speed if speed else 0
 
         self.was_moving = moving
         return sprite
@@ -192,18 +194,14 @@ class HumanAnimator:
     def _render(self, sprite):
         constants.SCREEN.draw_sprite(sprite, self.entity.rect)
 
-    def turn(self, index, starting_index=0, speed=-1):
+    def turn(self, index, starting_index=0):
         """
         Updates animation generator
         :param index: Sequence index ie Entity.{1}
         :param starting_index: Starting frame in sequence, can be -1 for current frame
         """
         self.sequence_index = index
-        if speed < 0:
-            speed = self._get_speed()
-        step = 18.0 / speed if speed else 0
-
-        self.walk_gen = self.spritesheet.get_sequence(step, index, starting_index)
+        self.walk_gen = self.spritesheet.get_sequence(self, index, starting_index)
 
 
 class VehicleAnimator(HumanAnimator):
@@ -235,5 +233,12 @@ class VehicleAnimator(HumanAnimator):
 
         except AttributeError:
             pass
+        HumanAnimator.turn(self, index, starting_index)
 
-        HumanAnimator.turn(self, index, starting_index, speed)
+    def _render(self, sprite):
+        HumanAnimator._render(self, sprite)
+        # debug render current car state to screen
+        import ai
+
+        state = util.get_enum_name(ai.VehicleState, self.entity.controller.state)
+        constants.SCREEN.draw_string(state, (20, 20), colour=(0, 0, 255))

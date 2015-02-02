@@ -1,4 +1,5 @@
 import os
+import random
 
 from pygame.rect import Rect as pygame_Rect
 
@@ -128,6 +129,13 @@ def modify_attr(obj, attribute, func):
     setattr(obj, attribute, func(getattr(obj, attribute)))
 
 
+def get_enum_name(enum_cls, value):
+    for k, v in enum_cls.__dict__.items():
+        if not k.startswith("_") and v == value:
+            return k
+    return None
+
+
 class Rect:
     def __init__(self, *args):
         l = len(args)
@@ -235,9 +243,12 @@ class Stack:
         return pop
 
     def remove_item(self, x):
-        self._data.remove(x)
-        if x == self.top:
-            self._set_top()
+        try:
+            self._data.remove(x)
+            if x == self.top:
+                self._set_top()
+        except ValueError:
+            pass
 
     def push(self, x):
         self._data.append(x)
@@ -251,3 +262,34 @@ class Stack:
             self.top = self._data[-1]
         except IndexError:
             self.top = None
+
+
+class TimeTicker:
+    def __init__(self, limit_or_range_range):
+        """
+        :param limit_or_range_range: Either constant seconds, or a (min, max) range for random times
+        """
+
+        def reset_gen():
+            if isinstance(limit_or_range_range, tuple):
+                while True:
+                    yield random.uniform(*limit_or_range_range)
+            else:
+                while True:
+                    yield limit_or_range_range
+
+        self._reset = reset_gen()
+        self.time = 0
+        self.limit = 0
+        self.reset()
+
+    def tick(self):
+        self.time += constants.DELTA
+        complete = self.time >= self.limit
+        if complete:
+            self.reset()
+        return complete
+
+    def reset(self):
+        self.time = 0
+        self.limit = next(self._reset)

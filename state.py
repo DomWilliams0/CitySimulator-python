@@ -3,7 +3,6 @@ import logging
 
 import pygame
 
-import ai
 import event as event_module
 import animation
 import constants
@@ -15,7 +14,9 @@ import util
 class Transition:
     SCREEN_COVER = None
 
-    def __init__(self):
+    def __init__(self, duration=1, tick_count=40):
+        self.duration = duration
+        self._ticker = util.TimeTicker(float(duration) / tick_count)
         self.complete = False
         if not Transition.SCREEN_COVER:
             Transition.SCREEN_COVER = pygame.Surface(constants.WINDOW_SIZE).convert_alpha()
@@ -30,10 +31,11 @@ class FadeTransition(Transition):
         self.alpha = 255
 
     def tick(self):
-        self.alpha -= 15
-        if self.alpha < 0:
-            self.alpha = 0
-            self.complete = True
+        if self._ticker.tick():
+            self.alpha -= 15
+            if self.alpha < 0:
+                self.alpha = 0
+                self.complete = True
 
         Transition.SCREEN_COVER.fill((State.BACKGROUND + (self.alpha,)))
         constants.SCREEN.blit(Transition.SCREEN_COVER)
@@ -42,15 +44,16 @@ class FadeTransition(Transition):
 class ZoomTransition(Transition):
     def __init__(self):
         Transition.__init__(self)
-        scale = 15
+        scale = 10
         self.dim = (constants.WINDOW_SIZE[0] / scale, constants.WINDOW_SIZE[1] / scale)
         self.space = util.Rect(constants.WINDOW_CENTRE, self.dim)
 
     def tick(self):
-        if self.space.width > constants.WINDOW_SIZE[0]:
-            self.complete = True
+        if self._ticker.tick():
+            if self.space.width > constants.WINDOW_SIZE[0]:
+                self.complete = True
 
-        self.space.inflate(*self.dim)
+            self.space.inflate(*self.dim)
 
         Transition.SCREEN_COVER.fill(State.BACKGROUND)
         pygame.draw.rect(Transition.SCREEN_COVER, (0, 0, 0, 0), self.space.to_tuple())
@@ -70,7 +73,7 @@ class StateManager:
         :param transition_cls: Optional transition class between the states
         """
         if transition_cls is None:
-            transition_cls = ZoomTransition if random.random() < 0.5 else FadeTransition
+            transition_cls = ZoomTransition if random.random() < 1.0 else FadeTransition
 
         try:
             self.transition = transition_cls()

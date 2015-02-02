@@ -82,7 +82,11 @@ class GameScreen:
         """
         Draws the given number at the bottom left of the screen, with the given offset
         """
-        self._window.blit(self.font.render(str(int(fps)), 1, (255, 0, 0)), (offset, WINDOW_SIZE[1] - offset))
+        self.draw_string(str(int(fps)), (offset, WINDOW_SIZE[1] - offset))
+
+    def draw_string(self, string, pos, colour=(255, 0, 0), absolute=True):
+        surface = self.font.render(string, 1, colour)
+        self._window.blit(surface, self.camera.apply(pos) if not absolute else pos)
 
     def blit(self, surface, pos=(0, 0)):
         """
@@ -217,7 +221,6 @@ class Direction:
     VALUES = [SOUTH, WEST, EAST, NORTH]
     HORIZONTALS = [WEST, EAST]
     VERTICALS = [SOUTH, NORTH]
-    KEY_ORDER = [NORTH, WEST, SOUTH, EAST]
 
     @staticmethod
     def random():
@@ -228,7 +231,7 @@ class Direction:
         if direction in Direction.HORIZONTALS:
             return Direction.EAST if direction == Direction.WEST else Direction.WEST
         else:
-            return Direction.SOUTH if direction == Direction.NORTH else Direction.SOUTH
+            return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
 
 
 class EntityType:
