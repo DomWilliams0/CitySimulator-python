@@ -524,27 +524,25 @@ class World(BaseWorld):
 
     def tick(self, render=True):
         BaseWorld.tick(self, render)
-        for n in self.roadmap.nodes:
-            n = map(operator.mul, n, constants.DIMENSION)
-            constants.SCREEN.draw_circle(n)
-            # for o in self.roadmap.nodes:
-            # if n != o:
-            # o = map(operator.mul, o, constants.DIMENSION)
-            # constants.SCREEN.draw_line(n, o)
-
+        # debug terrible rendering of lanes
         for road in self.roadmap.roads:
-            for t in road.bounds:
-                pixel = util.tile_to_pixel(t)
-                constants.SCREEN.draw_rect(pixel, filled=False, colour=(255, 255, 0) if road.is_spawn else (0, 255, 255))
+            i = 0
+            for r in road._bounds:
+                pixel = util.Rect(r)
+                colour = (255, 255, 0) if i > 1 else (0, 255, 255)
+                i += 1
+                for a in ('x', 'y', 'width', 'height'):
+                    util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
+                constants.SCREEN.draw_rect(pixel, filled=False, colour=colour)
 
+        for node in self.roadmap.nodes.values():
+            constants.SCREEN.draw_circle_in_tile(util.tile_to_pixel(node.point))
 
-                # for rect in self.roadmap.rects:
-                # rect = util.Rect(rect)
-                # rect.x *= constants.TILE_SIZE
-                # rect.y *= constants.TILE_SIZE
-                # rect.width *= constants.TILE_SIZE
-                # rect.height *= constants.TILE_SIZE
-                # constants.SCREEN.draw_rect(rect, colour=(0, 255, 0), filled=False)
+            # for r in self.roadmap.temp_regions:
+            # pixel = util.Rect(r)
+            #     for a in ('x', 'y', 'width', 'height'):
+            #             util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
+            #     constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
 
 
 class BuildingWorld(BaseWorld):
@@ -561,65 +559,114 @@ class BuildingWorld(BaseWorld):
 # noinspection PyShadowingNames
 class RoadMap:
     class Road:
-        def __init__(self, line, road_direction, world, move_back=False, oneway=False):
-            self.width = len(line)
-            self.bounds = []
-            self.line = tuple(map(lambda x: tuple(map(operator.sub, x,
-                                                      map(lambda y: y * (self.width if move_back else 0), road_direction))), line))
+        _LAST_ID = 0
 
+        def __init__(self, roadmap, line, road_direction, road_length, oneway=False):
+            self.id = RoadMap.Road._LAST_ID
+            RoadMap.Road._LAST_ID += 1
+
+            self.roadmap = roadmap
+            self.oneway = oneway
+            self.vertical_road = road_direction[0] == 0
+            self.road_direction = road_direction
+            self.direction = -1 if road_direction[1 if self.vertical_road else 0] < 0 else 1
+            self.width = len(line)
+            self.line = line
+            self.end_line = line
+            self.length = 0
             self.is_spawn = False
-            for tx, ty in self.line:
-                if tx == 0 or ty == 0 or tx == world.tile_width - 1 or ty == world.tile_height - 1:
+            self._bounds = []
+
+            self.set_road_length(road_length)
+
+        def set_road_length(self, road_length):
+            self.length = road_length
+            self.line = map(lambda x: tuple(x), self.line)  # tupled
+            self.end_line = self.roadmap.move_line(self.line, road_length, self.road_direction)
+
+            # find if this road contains the end of the world
+            all_points = self.line[:]
+            all_points.extend(map(operator.add, x, (y * road_length for y in self.road_direction)) for x in self.line)
+            self.is_spawn = False
+            for tx, ty in all_points:
+                if tx == 0 or ty == 0 or tx == self.roadmap.world.tile_width - 1 or ty == self.roadmap.world.tile_height - 1:
                     self.is_spawn = True
                     break
 
-            # split into rectangles
-            if len(self.line) >= 2:
-                if self.line[0][0] != self.line[1][0]:
-                    index = 0
-                    attrs = 'width', 'x'
-                else:
-                    index = 1
-                    attrs = 'height', 'y'
+            if self.vertical_road:
+                attrs = 'width', 'x'
+            else:
+                attrs = 'height', 'y'
 
-                mintile = min(self.line)
-                half = (max(self.line)[index] - mintile[index]) / 2
+            # create one spanning rectangle
+            rect = util.Rect(min(self.line), (1, 1))
+            util.modify_attr(rect, attrs[0], lambda x: len(self.line))
 
-                if not oneway:
-                    toprect = util.Rect(mintile, (1, 1))
-                    util.modify_attr(toprect, attrs[0], lambda x: x + half)
+            start_bounds = [rect]
 
-                    bottomrect = util.Rect(toprect)
-                    util.modify_attr(bottomrect, attrs[1], lambda x: x + half * 2)
+            # split into 2 lanes
+            if not self.oneway:
+                util.modify_attr(rect, attrs[0], lambda x: float(x) / 2)
 
-                    self.bounds.extend([toprect, bottomrect])
-                    # self.node_pos = list(toprect.bottomright)
-                    # self.node_pos[0 if index == 1 else 1] -= 0.5
+                other = util.Rect(rect)
+                util.modify_attr(other, attrs[1], lambda x: x + getattr(other, attrs[0]))
 
-                else:
-                    rect = util.Rect(mintile, (1, 1))
-                    util.modify_attr(rect, attrs[0], lambda x: x + half * 2 + 1)
+                start_bounds.append(other)
 
-                    self.bounds.append(rect)
-                    # self.node_pos = rect.center
+            # find end boundaries
+            end_bounds = []
+            axis = 'y' if self.vertical_road else 'x'
+
+            for i, r in enumerate(start_bounds):
+                r = util.Rect(r)
+                util.modify_attr(r, axis,
+                                 lambda x: x + (road_length * self.direction))
+
+                end_bounds.append(r)
+
+            # todo: sort start and end bounds into lanes
+            if self.direction < 0:
+                start_bounds = start_bounds[::-1]
+                end_bounds = end_bounds[::-1]
+
+            self._bounds = []
+            self._bounds.extend(start_bounds)
+            self._bounds.extend(end_bounds)
+
+        def left_lane_start(self):
+            return self._bounds[0]
+
+        def right_lane_start(self):
+            return self._bounds[0 if self.oneway else 1]
+
+        def left_lane_end(self):
+            return self._bounds[2]
+
+        def right_lane_end(self):
+            return self._bounds[1 if self.oneway else 3]
+
+    class Intersection:
+        def __init__(self, roads):
+            self.roads = [[None] * 4]
+            print("intersection", roads)
 
     def __init__(self, world):
         self.world = world
-        self.nodes = []
-        self.roads = set()
+        self.nodes = {}
+        self.roads = []
+        # self.intersections = []
 
+    # todo: take a list of startpos, then wrap all this into a loop through them
     def begin_discovery(self, startpos):
-        # todo: only add nodes after all forking and road gathering is complete
-
         stack = util.Stack(startpos)
         road_regions = []
+        connected_roads = []
+        # intersections = []
 
         while stack:
-
             pos = stack.pop()
 
-            # find road width and direction
-            # pre-calculated
+            # pre-calculated from found fork
             precalc = len(pos) == 3
             start_line = None
             if precalc:
@@ -627,162 +674,55 @@ class RoadMap:
                 start_line = pos[0]
                 pos = tuple(start_line[0])
             else:
+                # find road width and direction (for unconnected roads)
                 road_width, width_direction, road_direction = self._find_road_width(pos)
 
             # roads not found
             if not road_direction or not width_direction:
-                break
+                continue
 
             # find the end of this road, and any forks on the way
-            end_line, forks, end_reached = self._traverse_road(pos, road_width, width_direction, road_direction, start_line=start_line)
-            # save the end of the road
-            self._add_road(end_line, road_direction)
+            road, (end_line, forks) = self._traverse_road(pos, road_width, width_direction, road_direction, start_line)
 
-            # filter forks, to remove repetitions
+            # print road.id, pos, road_direction
+
+            self.roads.append(road)
+
+            # extend region to cover whole road, to prevent duplicate roads (and infinite recursion)
+            rect = util.Rect(pos, (0, 0))
+            rlength = (road.length + (1 if road.direction > 0 else 0)) * road.direction
+            rwidth = road.width
+            order = 'width', 'height'
+            for i in xrange(2):
+                setattr(rect, order[(i + (1 if road.vertical_road else 0)) % 2], rwidth if i == 1 else rlength)
+
+            # filter forks, to remove repetitions and find road widths/directions
             forks = self._filter_forks(forks, road_regions)
+
+            # find intersections, and shorten roads if necessary
+            # intersection_positions = self._find_intersections(road, forks, road_regions)
+            # if intersection_positions:
+            # intersections.extend(intersection_positions)
+
+            connected_roads.append((pos, forks))
             for f in forks:
                 stack.push(f)
-
-            # extend region to cover whole road
-            rect = util.Rect(pos, (0, 0))
-            max_dim = (0, 0)
-            max_area = 0
-            for w in xrange(2):
-                for h in xrange(2):
-                    wfunc = min if w == 0 else max
-                    hfunc = min if h == 0 else max
-                    rect.width = wfunc(end_line)[0]
-                    rect.height = hfunc(end_line)[1]
-                    area = rect.area()
-                    if area > max_area:
-                        max_area = area
-                        max_dim = rect.width, rect.height
-            rect.width, rect.height = max_dim
-            rect.width -= pos[0] - 1
-            rect.height -= pos[1] - 1
             road_regions.append(rect)
 
-    def _find_difference(self, pos1, pos2, absolute):
-        diff = map(operator.sub, pos1, pos2)
-        if absolute:
-            return sorted(map(abs, diff))
-        else:
-            return diff
+        # debug
+        self.temp_regions = road_regions
 
-    def _filter_forks(self, forks, processed_road_regions):
-        def add_fork(line, width_direction, which_end, forklist):
-            try:
-                if abs(current[0][0] - current[1][0]) != 0:
-                    road_direction = (0, 1)
-                else:
-                    road_direction = (1, 0)
-            except IndexError:
-                return
+        # build intersections
+        # self._construct_intersections(intersections)
 
-            if which_end < 0:
-                road_direction = map(lambda x: x * -1, road_direction)
+        # connect nodes
+        self._build_graph(connected_roads)
 
-            # check if already processed
-            for rect in processed_road_regions:
-                for tile in current:
-                    if rect.collidepoint(tile):
-                        return
-            forklist.append((line, width_direction, road_direction))
+        # precalculate paths between spawns todo
+        # dict: spawn: otherspawn
+        # otherspawn: reversed ^
 
-        # no forks
-        if not forks:
-            return forks
-        forks = sorted(forks)
-
-        # split into consecutive forks
-        consecutive_forks = []
-        current = []
-        last = None
-        last_diff = None
-        last_which_end = None
-
-        for which_end, f in map(tuple, forks):
-            diff = self._find_difference(f, last, True) if last else 0
-            if last is None or diff == [0, 1]:
-                current.append(f)
-                if last:
-                    last_diff = self._find_difference(f, last, False)
-            else:
-                # calculate directions for this fork
-                add_fork(current, last_diff, which_end, consecutive_forks)
-                current = [f]
-            last = f
-            last_which_end = which_end
-
-        add_fork(current, last_diff, last_which_end, consecutive_forks)
-        return consecutive_forks
-
-    def _add_node_from_line(self, line):
-        self.nodes.append(min(line))
-
-    def _add_road(self, line, road_direction):
-        self.roads.add(RoadMap.Road(line, road_direction, self.world))
-
-    def _get_line_ends(self, line, width_direction):
-        key = lambda x: (x[0], x[1]) if width_direction[0] != 0 else (x[1], x[0])
-        s = sorted(line, key=key)
-
-        return [map(operator.sub, s[0], width_direction), map(operator.add, s[-1], width_direction)]
-        # negative = min(width_direction) < 0
-        # return [map(operator.add, s[i], map(lambda x: x * (-1 if negative else 1), width_direction)) for i in xrange(-1, 1)]
-        # return [s[0] - width_direction, s[-1] + width_direction]
-
-
-    # def _find_next_road_starts(self, end_line, width_direction):
-    #
-    # # check one past both ends
-    # ends = self._get_line_ends(end_line, width_direction)
-    #
-    # for x, y in ends:
-    # if self.world.is_in_range(x, y) and self.world.get_block(x, y).blocktype == BlockType.ROAD:
-    # yield (x, y)
-
-    def _traverse_road(self, startpos, width, width_direction, road_direction, start_line=None):
-        """
-        :return Line at the end of the road, list of (many consecutive) fork positions, whether or not the end of the word has been reached
-        """
-
-        def _recurse(world, line, road_direction, forks):
-            # move line forward
-            moved_line = map(lambda pos: map(operator.add, pos, road_direction), line)
-
-            ret = lambda b: (line, tuple(forks), b)
-
-            # verify the road line is still valid
-            for tilex, tiley in moved_line:
-                # end of world reached
-                if not world.is_in_range(tilex, tiley):
-                    return ret(True)
-
-                # end of this road reached
-                if world.get_block(tilex, tiley).blocktype != BlockType.ROAD:
-                    return ret(False)
-
-            # find forks
-            ends = self._get_line_ends(moved_line, width_direction)
-            for e in ends:
-                if world.is_in_range(*e) and world.get_block(*e).blocktype == BlockType.ROAD:
-                    which_end = -1 if min(ends) == e else 1
-                    forks.append((which_end, e))
-
-            return _recurse(world, moved_line, road_direction, forks)
-
-        # generates the line of coords for the road
-        if start_line is None:
-            line = map(lambda x: map(operator.add, x, startpos), [map(lambda x: x * i, width_direction) for i in xrange(width)])
-        else:
-            line = start_line
-
-        # save this road start
-        self._add_road(line, road_direction)
-
-        forks = []
-        return _recurse(self.world, line, road_direction, forks)
+        # roads need to know about their ends, and lanes
 
     def _find_road_width(self, startpos, max_road_width=8):
         def _recurse(world, pos, offset, current_width, max_road_width):
@@ -809,6 +749,201 @@ class RoadMap:
                     road_direction = offset
 
         return min_width, width_direction, road_direction
+
+    def move_line(self, line, amount, road_direction):
+        return tuple(map(lambda pos: tuple(map(operator.add, pos, (i * amount for i in road_direction))), line))
+
+    def valid_road_line(self, moved_line):
+        for tilex, tiley in moved_line:
+            if not self.world.is_in_range(tilex, tiley) or self.world.get_block(tilex, tiley).blocktype != BlockType.ROAD:
+                return False
+        return True
+
+    def _add_fork(self, road_regions, fork_list, line, width_direction, road_direction):
+
+        # not a valid position
+        if not self.valid_road_line(line):
+            return
+
+        # check if already processed
+        for rect in road_regions:
+            for tile in line:
+                if rect.collidepoint(tile):
+                    return
+        fork_list.append((line, width_direction, road_direction))
+
+    def _traverse_road(self, startpos, width, width_direction, road_direction, start_line):
+        """
+        :return Road object for this road,
+                    line at the end of the road,
+                    list of (many consecutive) fork positions
+        """
+
+        def get_line_ends(line, width_direction):
+            key = lambda x: (x[0], x[1]) if width_direction[0] != 0 else (x[1], x[0])
+            s = sorted(line, key=key)
+            return [tuple(map(operator.sub, s[0], width_direction)), tuple(map(operator.add, s[-1], width_direction))]
+
+        def _recurse(world, line, road_direction, forks):
+            # move line forward
+            moved_line = self.move_line(line, 1, road_direction)
+
+            # find forks
+            ends = get_line_ends(moved_line, width_direction)
+            for e in ends:
+                if world.is_in_range(*e) and world.get_block(*e).blocktype == BlockType.ROAD:
+                    which_end = -1 if min(ends) == e else 1
+                    forks.append((which_end, e))
+
+            # verify the road line is still valid
+            if not self.valid_road_line(moved_line):
+                return line, forks
+
+            return _recurse(world, moved_line, road_direction, forks)
+
+        # generates the line of coords for the road
+        if start_line is None:
+            line = map(lambda x: map(operator.add, x, startpos), [map(lambda x: x * i, width_direction) for i in xrange(width)])
+        else:
+            line = start_line
+
+        forks = []
+        recurse = _recurse(self.world, line, road_direction, forks)
+        road = RoadMap.Road(self, line, road_direction, util.find_difference(line[0], recurse[0][0], True)[1])
+        return road, recurse
+
+    def _filter_forks(self, forks, processed_road_regions):
+        """
+        :return Fork line, width direction, road direction
+        """
+
+        def add_fork(line, width_direction, which_end, fork_list):
+            try:
+                if abs(current[0][0] - current[1][0]) != 0:
+                    road_direction = (0, 1)
+                else:
+                    road_direction = (1, 0)
+            except IndexError:
+                return
+
+            if which_end < 0:
+                road_direction = map(lambda x: x * -1, road_direction)
+
+            self._add_fork(processed_road_regions, fork_list, line, width_direction, road_direction)
+
+        # no forks
+        if not forks:
+            return forks
+        forks = sorted(forks)
+
+        # split into consecutive forks
+        consecutive_forks = []
+        current = []
+        last = None
+        last_diff = None
+        last_which_end = None
+
+        for which_end, f in map(tuple, forks):
+            diff = util.find_difference(f, last, True) if last else 0
+            if last is None or diff == [0, 1]:
+                current.append(f)
+                if last:
+                    last_diff = util.find_difference(f, last, False)
+            else:
+                # calculate directions for this fork
+                add_fork(current, last_diff, last_which_end, consecutive_forks)
+                current = [f]
+            last = f
+            last_which_end = which_end
+
+        add_fork(current, last_diff, last_which_end, consecutive_forks)
+        return consecutive_forks
+
+    def _find_intersections(self, road, forks, road_regions):
+
+        extra_forks = []
+        intersection_positions = []
+        for fork, wdir, fdir in forks:
+            for other, _, odir in forks:
+                if fork <= other or len(fork) != len(other):
+                    continue
+
+                # not facing opposite directions
+                if abs(max(fdir)) == abs(max(odir)):
+                    continue
+
+                # they don't vary on a single axis
+                diff = map(operator.sub, fork[0], other[0])
+                if min(diff) != 0:
+                    continue
+
+                # shorten road
+                index = 1 if road.vertical_road else 0
+                road_begin = road.line[0][index]
+                intersection_begin = fork[0][index]
+                road.set_road_length(intersection_begin - road_begin - 1)
+
+                # add road opposite to list of forks
+                new_fork = self.move_line(road.line, road.length + len(fork) + 1, road.road_direction)
+                self._add_fork(road_regions, extra_forks, new_fork, wdir, road.road_direction)
+
+                # add intersection
+                intersection_positions.append((fork, other, road.end_line, new_fork))
+
+        forks.extend(extra_forks)
+        return intersection_positions
+
+    def _construct_intersections(self, intersections):
+        print(len(intersections))
+        for road_lines in intersections:
+            for line in road_lines:
+                print(line)
+            print
+
+    class Node:
+        def __init__(self, point, node_id):
+            self.point = point
+            self.id = node_id
+            self.edges = set()
+
+        def __repr__(self):
+            return "Node %d" % self.id
+
+    def _build_graph(self, connected_roads):
+        def add_edge(node, other):
+            from itertools import permutations
+
+            for a, b in permutations((node, other)):
+                a.edges.add(b)
+
+        def find_node_from_points(points):
+            for point in points:
+                for n in self.nodes.values():
+                    if point == n.point:
+                        return n
+
+        self.nodes = {}
+        node_id = 0
+
+        # create nodes
+        for point, _ in connected_roads:
+            self.nodes[node_id] = RoadMap.Node(point, node_id)
+            node_id += 1
+
+        # link nodes
+        for nid, (point, all_forks) in enumerate(connected_roads):
+
+            # no forks
+            if not all_forks:
+                continue
+
+            node = self.nodes[nid]
+            for fork_points, _, _ in all_forks:
+                add_edge(node, find_node_from_points(fork_points))
+
+        # convert node edges to list: order must be kept now
+        for n in self.nodes.values():
+            n.edges = sorted(list(n.edges))
 
 
 class _BlockHelper:

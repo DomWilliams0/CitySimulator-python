@@ -220,6 +220,8 @@ class VehicleController(BaseController):
         self.last_directions = [0, 0]
         self.last_state = self.state
 
+        self.btree = BehaviourTree(self)
+
     def _get_speed(self):
         return self.current_speed
 
@@ -264,6 +266,7 @@ class VehicleController(BaseController):
     def tick(self):
         # todo: only change direction to opposite if stopped, otherwise brake
         BaseController.tick(self)
+        # self.btree.tick()
 
         # None if no key, brake_key if brake is held down
         current = self._get_pressed_key()
@@ -283,9 +286,6 @@ class VehicleController(BaseController):
         if self.state == VehicleState.ACCELERATING:
             if self.current_speed == 0:
                 self.current_speed = constants.TILE_SIZE
-                # else:
-                # # todo: abstract all to use pedals
-                # self.current_speed *= self.pedal.get_force()
 
         if self.state != VehicleState.STOPPED:
             self.press_pedal(self.state)
@@ -345,21 +345,22 @@ class VehicleController(BaseController):
     def handle(self, keydown, key):
         if key in _KEYS:
             last_top = self._keystack.top
-            if keydown and key != last_top:
+            if keydown:
 
                 # todo: is this necessary? a car can turn around quickly enough to make this restriction redundant
                 # register = True
                 # if self.state != VehicleState.STOPPED:
                 # current_direction = self.entity.direction
                 # key_press_direction = self._key_to_direction(key)
-                #     key_opposite = constants.Direction.opposite(key_press_direction)
+                # key_opposite = constants.Direction.opposite(key_press_direction)
                 #
-                #     if key_opposite == current_direction:
-                #         register = False
+                # if key_opposite == current_direction:
+                # register = False
                 #
                 # if register:
-                #     self._keystack.push(key)
-                self._keystack.push(key)
+                # self._keystack.push(key)
+                if key != last_top:
+                    self._keystack.push(key)
             else:
                 self._keystack.remove_item(key)
 
@@ -423,93 +424,353 @@ class RandomHumanWanderer(BaseBehaviour):
                 self.handle(not release, key)
 
 
-# class SimpleVehicleFollower(BaseBehaviour):
-# """
-#     Causes the given entity to follow the given points in order
-#     """
-#
-#     class _PathFinder:
-#         def __init__(self, world, start_pos, *allowed_blocks):
-#             self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
-#
-#         def find_path(self, goal, path_follower):
-#             # ah fuck, what now
-#             pass
-#
-#         # noinspection PyMethodMayBeStatic
-#         def _flood_find(self, world, pos, allowed_blocktypes):
-#             stack = set()
-#             results = []
-#             allowed_blocktypes = set(allowed_blocktypes)
-#             stack.add(pos)
-#
-#             while stack:
-#                 (x, y) = stack.pop()
-#                 block = world.get_block(x, y)
-#                 if block.blocktype in allowed_blocktypes and (x, y) not in results:
-#                     results.append((x, y))
-#                     if x > 0:
-#                         stack.add((x - 1, y))
-#                     if x < world.tile_width - 1:
-#                         stack.add((x + 1, y))
-#                     if y > 0:
-#                         stack.add((x, y - 1))
-#                     if y < world.tile_height - 1:
-#                         stack.add((x, y + 1))
-#             return results
-#
-#     def __init__(self, vehicle):
-#         BaseBehaviour.__init__(self, vehicle)
-#         assert isinstance(vehicle, entity.Vehicle)
-#
-#         self.points = []
-#
-#         # finder = _PathFinder(the_entity.world, util.pixel_to_tile(the_entity.rect.center), (23, 6), world.BlockType.PAVEMENT_C)
-#         # debug test
-#         self.add_point(5, 8)
-#         self.add_point(33, 8)
-#         self.add_point(36, 28)
-#
-#         self.current_goal = self._next_point()
-#         self.following = True
-#
-#     def add_point(self, tilex, tiley):
-#         """
-#         Appends the given point to the end of the path
-#         """
-#         self.points.append((tilex * constants.TILE_SIZE, tiley * constants.TILE_SIZE))
-#
-#     def _next_point(self):
-#         try:
-#             p = self.points.pop(0)
-#         except IndexError:
-#             p = None
-#         return p
-#
-#     def tick(self):
-#         pos = self.entity.rect.center
-#
-#         # debug draw nodes
-#         for p in self.points:
-#             constants.SCREEN.draw_circle(p)
-#
-#         if not self.following:
-#             return
-#
-#         # drive towards
-#         if not self._reached_goal(pos):
-#             direction = Vec2d(self.current_goal[0] - pos[0], self.current_goal[1] - pos[1])
-#             angle = direction.get_angle()
-#             halfangle = util.round_to_multiple(angle, 45)
-#
-#         else:
-#             self.controller.halt()
-#             self.current_goal = self._next_point()
-#             if not self.current_goal:  # complete
-#                 self.following = False
-#
-#         if self.current_goal:
-#             constants.SCREEN.draw_line(pos, self.current_goal)
-#
-#     def _reached_goal(self, pos):
-#         return util.distance_sqrd(pos, self.current_goal) < constants.TILE_SIZE_SQRD * 2
+                # class SimpleVehicleFollower(BaseBehaviour):
+                # """
+                # Causes the given entity to follow the given points in order
+                # """
+                #
+                # class _PathFinder:
+                # def __init__(self, world, start_pos, *allowed_blocks):
+                # self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
+                #
+                # def find_path(self, goal, path_follower):
+                # # ah fuck, what now
+                # pass
+                #
+                # # noinspection PyMethodMayBeStatic
+                # def _flood_find(self, world, pos, allowed_blocktypes):
+                # stack = set()
+                # results = []
+                # allowed_blocktypes = set(allowed_blocktypes)
+                # stack.add(pos)
+                #
+                # while stack:
+                # (x, y) = stack.pop()
+                # block = world.get_block(x, y)
+                # if block.blocktype in allowed_blocktypes and (x, y) not in results:
+                # results.append((x, y))
+                # if x > 0:
+                # stack.add((x - 1, y))
+                # if x < world.tile_width - 1:
+                # stack.add((x + 1, y))
+                # if y > 0:
+                # stack.add((x, y - 1))
+                # if y < world.tile_height - 1:
+                # stack.add((x, y + 1))
+                # return results
+                #
+                # def __init__(self, vehicle):
+                # BaseBehaviour.__init__(self, vehicle)
+                #         assert isinstance(vehicle, entity.Vehicle)
+                #
+                #         self.points = []
+                #
+                #         # finder = _PathFinder(the_entity.world, util.pixel_to_tile(the_entity.rect.center), (23, 6), world.BlockType.PAVEMENT_C)
+                #         # debug test
+                #         self.add_point(5, 8)
+                #         self.add_point(33, 8)
+                #         self.add_point(36, 28)
+                #
+                #         self.current_goal = self._next_point()
+                #         self.following = True
+                #
+                #     def add_point(self, tilex, tiley):
+                #         """
+                #         Appends the given point to the end of the path
+                #         """
+                #         self.points.append((tilex * constants.TILE_SIZE, tiley * constants.TILE_SIZE))
+                #
+                #     def _next_point(self):
+                #         try:
+                #             p = self.points.pop(0)
+                #         except IndexError:
+                #             p = None
+                #         return p
+                #
+                #     def tick(self):
+                #         pos = self.entity.rect.center
+                #
+                #         # debug draw nodes
+                #         for p in self.points:
+                #             constants.SCREEN.draw_circle(p)
+                #
+                #         if not self.following:
+                #             return
+                #
+                #         # drive towards
+                #         if not self._reached_goal(pos):
+                #             direction = Vec2d(self.current_goal[0] - pos[0], self.current_goal[1] - pos[1])
+                #             angle = direction.get_angle()
+                #             halfangle = util.round_to_multiple(angle, 45)
+                #
+                #         else:
+                #             self.controller.halt()
+                #             self.current_goal = self._next_point()
+                #             if not self.current_goal:  # complete
+                #                 self.following = False
+                #
+                #         if self.current_goal:
+                #             constants.SCREEN.draw_line(pos, self.current_goal)
+                #
+                #     def _reached_goal(self, pos):
+                #         return util.distance_sqrd(pos, self.current_goal) < constants.TILE_SIZE_SQRD * 2
+
+
+# behaviour tree goodness
+class BehaviourTree:
+    def __init__(self, entity_controller):
+        self.root = None
+        self.current = None
+        self.data_context = {}
+        self.controller = entity_controller
+
+        # debug example
+        sequence = Sequence(self.data_context,
+                            VehicleMoveToLocation(entity_controller, (36, 7)),
+                            DebugPrint())
+
+        self.root = Repeater(sequence, self.data_context)
+        self.current = self.root
+
+        self.current.start()
+
+    def tick(self):
+        self.current.process()
+        # print("state:", util.get_enum_name(Task, state))
+
+    """
+        Task: has a list of children
+        LeafTask: has no children
+        Decorator: only allows one child
+    """
+
+
+class Task:
+    RUNNING = 0
+    FAILURE = 1
+    SUCCESS = 2
+
+    def __init__(self, data_context, *children):
+        self.data_context = data_context
+        self.children_tasks = list(*children)
+        # self.current_child = self.children_tasks[0] if self.children_tasks else None
+
+    def start(self):
+        pass
+
+    def end(self):
+        pass
+
+    def process(self):
+        # returns its new state?
+        pass
+
+
+class LeafTask(Task):
+    def __init__(self):
+        # leaves have no children
+        Task.__init__(self, None)
+
+
+# nodes have multiple children
+# leaves have no children; None children list?
+
+
+class Composite(Task):
+    def __init__(self, data_context, *children):
+        Task.__init__(self, data_context, children)
+        self.children_stack = util.Stack()
+
+    def start(self):
+        for child in reversed(self.children_tasks):
+            child.data_context = self.data_context
+            self.children_stack.push(child)
+        self.children_stack.top.start()
+
+    def end(self):
+        self.children_stack.clear()
+
+    def _process_current(self):
+        current = self.children_stack.top
+        return current.process()
+
+
+class Sequence(Composite):
+    def process(self):
+        state = self._process_current()
+
+        # next sequence
+        if state == Task.SUCCESS:
+
+            # end current
+            last_child = self.children_stack.pop()
+            last_child.end()
+            if not self.children_stack:
+                # all children complete
+                return Task.SUCCESS
+            else:
+                # running the next child
+                self.children_stack.top.start()
+                return Task.RUNNING
+
+        # either running or failure: propogate this state up to the parent
+        else:
+            return state
+
+
+class Selector(Composite):
+    def process(self):
+        state = self._process_current()
+
+        if state == Task.FAILURE:
+            self.children_stack.top.end()
+            self.children_stack.pop()
+
+            # all children failed
+            if not self.children_stack:
+                return Task.FAILURE
+
+            # start new child
+            self.children_stack.top.start()
+
+        # either success or running: propogate to parent
+        else:
+            return state
+
+
+class Decorator(Task):
+    def __init__(self, child, data_context):
+        Task.__init__(self, data_context)
+        self.child = child
+        # if child:
+        # child.parent = self
+
+    def start(self):
+        self.child.start()
+
+    def end(self):
+        self.child.end()
+
+
+class Inverter(Decorator):
+    def process(self):
+        state = self.child.process()
+
+        # still running
+        if state == Task.RUNNING:
+            return state
+
+        # invert
+        else:
+            if state == Task.SUCCESS:
+                return Task.FAILURE
+            else:
+                return Task.SUCCESS
+
+
+class Succeeder(Decorator):
+    def process(self):
+        state = self.child.process()
+
+        # still running
+        if state == Task.RUNNING:
+            return state
+
+        # always success
+        else:
+            return Task.SUCCESS
+
+
+class Repeater(Decorator):
+    def __init__(self, child, data_context, repeat_times=-1):
+        Decorator.__init__(self, child, data_context)
+        self.repeat_times = repeat_times
+
+    def process(self):
+        state = self.child.process()
+
+        # still running
+        if state == Task.RUNNING:
+            return state
+
+        else:
+            # repeat a number of times
+            if self.repeat_times > 0:
+                self.repeat_times -= 1
+                if self.repeat_times == 0:
+                    return Task.SUCCESS
+
+        # restart
+        self.child.end()
+        self.child.start()
+        return Task.RUNNING
+
+
+class RepeatUntilFail(Decorator):
+    def process(self):
+        state = self.child.process()
+
+        # restart child on success
+        if state == Task.SUCCESS:
+            self.child.begin()
+            return Task.RUNNING
+
+        # failure and running
+        else:
+            return state
+
+
+# leaf tasks/actions
+class VehicleLeafTask(LeafTask):
+    def __init__(self, vehicle_controller):
+        LeafTask.__init__(self)
+        self.vehicle = vehicle_controller.entity
+
+
+class VehicleMoveToLocation(VehicleLeafTask):
+    def __init__(self, vehicle_controller, target_location):
+        VehicleLeafTask.__init__(self, vehicle_controller)
+        self.target_location = util.tile_to_pixel(target_location)
+        self._vehicle_size = self.vehicle.aabb.width
+
+    def process(self):
+        dx, dy = self.target_location[0] - self.vehicle.aabb.x, self.target_location[1] - self.vehicle.aabb.y
+
+        # arrived todo: temporary arbitary position, check colliding with the road rect
+        sqrd = util.distance_sqrd(self.vehicle.aabb.topleft, self.target_location)
+        if sqrd < self._vehicle_size ** 2:
+            return Task.SUCCESS
+
+        # crashed? todo
+        # elif not self.vehicle.is_moving():
+        # return Task.FAILURE
+
+        # get drive direction
+        if abs(dx) > self._vehicle_size:
+            direction = constants.Direction.EAST if dx > 0 else constants.Direction.WEST
+        else:
+            direction = constants.Direction.SOUTH if dy > 0 else constants.Direction.NORTH
+
+        # drive
+        self.vehicle.controller.accelerate_in_direction(direction)
+        return Task.RUNNING
+
+    def start(self):
+        # print("starting vehiclemovetolocation")
+        self.data_context["target_location"] = self.target_location
+
+    def end(self):
+        # print("ending vehiclemovetolocation")
+        del self.data_context["target_location"]
+
+
+class StopForObstacle(LeafTask):
+    # if no obstacle: failure
+    # else stop
+    pass
+
+
+class DebugPrint(LeafTask):
+    def process(self):
+        print(">>>>>DEBUG PRINT<<<<<<")
+        return Task.SUCCESS

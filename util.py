@@ -1,5 +1,6 @@
 import os
 import random
+import operator
 
 from pygame.rect import Rect as pygame_Rect
 
@@ -65,14 +66,7 @@ def pixel_to_tile(pos):
 
 
 def tile_to_pixel(pos):
-    if isinstance(pos, Rect):
-        pos = Rect(pos)
-        for a in ('x', 'y', 'width', 'height'):
-            setattr(pos, a, getattr(pos, a) * constants.TILE_SIZE)
-        return pos
-
-    else:
-        return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
+    return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
 
 
 def parse_orientation(char):
@@ -136,6 +130,14 @@ def get_enum_name(enum_cls, value):
     return None
 
 
+def find_difference(pos1, pos2, absolute):
+    diff = map(operator.sub, pos1, pos2)
+    if absolute:
+        return sorted(map(abs, diff))
+    else:
+        return diff
+
+
 class Rect:
     def __init__(self, *args):
         l = len(args)
@@ -181,6 +183,12 @@ class Rect:
             self.x = value[0] - self.width / 2
             self.y = value[1] - self.height / 2
         else:
+            if value < 0 and (key == 'width' or key == 'height'):
+                if key[0] == 'w':
+                    self.x += value
+                else:
+                    self.y += value
+                value *= -1
             self.__dict__[key] = value
 
     def __getitem__(self, key):
@@ -238,9 +246,16 @@ class Stack:
         return bool(self._data)
 
     def pop(self):
-        pop = self._data.pop()
+        try:
+            pop = self._data.pop()
+        except IndexError:
+            pop = None
         self._set_top()
         return pop
+
+    def clear(self):
+        self._data = []
+        self.top = None
 
     def remove_item(self, x):
         try:

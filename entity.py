@@ -4,7 +4,6 @@ import random
 from pygame.sprite import Sprite
 from pygame.surface import Surface
 
-from util import Rect
 import ai
 import animation
 import constants
@@ -30,8 +29,8 @@ class Entity(Sprite):
         """
         Sprite.__init__(self)
         self.image = Surface(dimensions).convert()
-        self.rect = Rect(self.image.get_rect())
-        self.aabb = Rect(self.rect)
+        self.rect = util.Rect(self.image.get_rect())
+        self.aabb = util.Rect(self.rect)
 
         self.world = world
         world.spawn_entity(self, loc)
@@ -275,7 +274,7 @@ class Human(Entity):
 
         self.controller = ai.HumanController(self)
 
-        self.interact_aabb = Rect(self.aabb)
+        self.interact_aabb = util.Rect(self.aabb)
         offset = self.rect.width / 4
         self.interact_aabb.width -= offset * 2
         self.interact_aabb.x += offset
