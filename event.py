@@ -12,3 +12,8 @@ _TYPES = {
 
 def call_event(eventtype, **args):
     pygame.event.post(pygame.event.Event(pygame.USEREVENT, dict({"eventtype": eventtype}.items() + args.items())))
+
+
+def simplify_key_event(event):
+    if event.type == pygame.KEYDOWN or event.type == pygame.KEYUP:
+        return event.type == pygame.KEYDOWN, event.key

@@ -182,6 +182,9 @@ class Entity(Sprite):
         """
         return bool(self.velocity)
 
+    def get_current_tile(self):
+        return util.pixel_to_tile(self.aabb.topleft)
+
     def handle_collisions(self):
         """
         Corrects any collisions with the world
@@ -304,9 +307,6 @@ class Human(Entity):
                     self.interact_with_block(block, *r)
             except AttributeError:
                 pass
-
-    def wander(self):
-        self.controller.add_behaviour(ai.RandomHumanWanderer(self))
 
 
 class Vehicle(Entity):

@@ -8,7 +8,7 @@ import constants
 import world as world_module
 
 
-_SURROUNDING_OFFSETS = (-1, 0), (1, 0), (0, 1), (0, -1)
+_SURROUNDING_OFFSETS = (0, 1), (-1, 0), (1, 0), (0, -1)  # conveniently in the order of Direction
 
 
 def get_relative_path(path):
@@ -136,6 +136,11 @@ def find_difference(pos1, pos2, absolute):
         return sorted(map(abs, diff))
     else:
         return diff
+
+
+def add_direction(position, direction):
+    delta = _SURROUNDING_OFFSETS[direction]
+    return map(operator.add, position, delta)
 
 
 class Rect:
@@ -299,6 +304,10 @@ class TimeTicker:
         self.reset()
 
     def tick(self):
+        """
+        If target time has been reached, the ticker is reset
+        :return: True if the target time has been reached, otherwise false
+        """
         self.time += constants.DELTA
         complete = self.time >= self.limit
         if complete:

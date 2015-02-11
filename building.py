@@ -64,7 +64,6 @@ class Building:
 
             self.inside.spawn_entity_at_spawn(human, self._closest(human, True), vary=False)
             human.turn(entity.constants.Direction.NORTH)
-            human.controller.halt()
 
             event.call_event(event.BUILDING_ENTER, entity=human, building=self)
 
@@ -80,7 +79,6 @@ class Building:
             # vary exit point slightly so everyone doesn't appear in the same place when leaving       
             human.move_entity(door[0] + random.randrange(constants.TILE_SIZE), door[1] + constants.TILE_SIZE * 1.5 + random.randrange(constants.TILE_SIZE / 4))
             human.turn(entity.constants.Direction.SOUTH)
-            human.controller.halt()
 
             event.call_event(event.BUILDING_EXIT, entity=human, building=self)
 

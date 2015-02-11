@@ -3,6 +3,7 @@ import logging
 
 import pygame
 
+import ai
 import event as event_module
 import animation
 import constants
@@ -63,8 +64,8 @@ class ZoomTransition(Transition):
 class StateManager:
     def __init__(self):
         self._stack = util.Stack()
-        self.player_controller = None
         self.transition = None
+        self.controller = ai.InputController()
 
     def change_state(self, new_state=None, transition_cls=None):
         """
@@ -108,7 +109,7 @@ class StateManager:
             # prevent world transfer flicker
             e.entity.visible = True
 
-            if e.entity == self.player_controller.entity:
+            if e.entity == self.controller.entity:
                 # building enter/exit
                 if hasattr(e, "building"):
                     building = e.building
@@ -130,15 +131,17 @@ class StateManager:
     def transfer_control(self, entity):
 
         # pop off control override from old controller, if any
-        if self.player_controller is not None:
-            self.player_controller.set_suppressed_behaviours(False)
-
-        if not entity:
-            self.player_controller = None
-        else:
-            self.player_controller = entity.controller
-            self.player_controller.set_suppressed_behaviours(True)
-            self.follow_with_camera(entity)
+        # if self.player_controller is not None:
+        # self.player_controller.set_suppressed_behaviours(False)
+        #
+        # if not entity:
+        #     self.player_controller = None
+        # else:
+        #     self.player_controller = entity.controller
+        #     self.player_controller.set_suppressed_behaviours(True)
+        #     self.follow_with_camera(entity)
+        self.controller.control(entity)
+        self.follow_with_camera(entity)
 
     def follow_with_camera(self, entity):
         constants.SCREEN.camera.target = entity
@@ -167,9 +170,12 @@ class State:
         """
         Processes events
         """
-        controller = constants.STATEMANAGER.player_controller
+        controller = constants.STATEMANAGER.controller
         if controller:
-            controller.handle_event(event)
+            controller.handle(event)
+
+    def handle_user_event(self, e):
+        pass
 
     def tick(self):
         """
@@ -212,10 +218,9 @@ class GameState(State):
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(8):
+        for _ in xrange(1):
             h = Human(self.world)
-            h.wander()
-            # constants.STATEMANAGER.transfer_control(h)
+            constants.STATEMANAGER.transfer_control(h)
 
         # add some vehicles
         for _ in xrange(0):
@@ -224,7 +229,7 @@ class GameState(State):
         # debug vehicle to control
         v = Vehicle(self.world)
         # constants.STATEMANAGER.follow_with_camera(v)
-        constants.STATEMANAGER.transfer_control(v)
+        # constants.STATEMANAGER.transfer_control(v)
 
     def tick(self):
         State.tick(self)

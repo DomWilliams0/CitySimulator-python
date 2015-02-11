@@ -195,21 +195,14 @@ class Camera:
 
 
 class Speed:
-    SLOW = 80
-    MEDIUM = 120
-    FAST = 180
-    MAX = 240
-
     VEHICLE_MIN = 200
     VEHICLE_MAX = 400
 
+    HUMAN_MIN = 80
+    HUMAN_FAST = 100
+    HUMAN_MAX = 180
+
     WTF_DEBUG = 800
-
-    VALUES = [SLOW, MEDIUM, FAST]
-
-    @staticmethod
-    def random():
-        return random.choice(Speed.VALUES)
 
 
 class Direction:

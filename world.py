@@ -120,11 +120,18 @@ class BaseWorld:
         Finds any collidable/interactable blocks at the given coords and returns the uppermost
         :return None if no collidable block found, otherwise the block
         """
-        for layer in reversed(self.layers):
-            if layer != "rects":
-                b = self.get_block(x, y, layer)
-                if b and (BlockType.is_collidable(b.blocktype) or BlockType.is_interactable(b.blocktype)):
+        for layer_name, layer in reversed(self.layers.items()):
+            if layer_name != "rects":
+                b = self.get_block(x, y, layer_name)
+                if not b:
+                    continue
+                if BlockType.is_collidable(b.blocktype) or BlockType.is_interactable(b.blocktype):
+                    # blanks
+                    if b.blocktype == BlockType.BLANK:
+                        if not layer.solid_blanks:
+                            continue
                     return b
+
         return None
 
     def set_block(self, x, y, block, layer, overwrite_collisions=True):
@@ -304,6 +311,14 @@ class BaseWorld:
 
     def is_in_range(self, tilex, tiley):
         return 0 <= tilex < self.tile_width and 0 <= tiley < self.tile_height
+
+    def is_direction_blocked(self, position, direction):
+        next_tile = util.add_direction(position, direction)
+        if not self.is_in_range(*next_tile):
+            return True
+
+        block = self.get_solid_block(int(next_tile[0]), int(next_tile[1]))
+        return bool(block)
 
     def get_surrounding_blocks(self, pos, layer="terrain"):
         """
@@ -1167,7 +1182,6 @@ class InteractableDoorBlock(InteractableBlock):
         self.building = None
 
     def interact(self, human, x, y):
-        human.velocity.zero()
         self.building.enter(human)
 
 

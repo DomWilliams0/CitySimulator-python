@@ -234,11 +234,3 @@ class VehicleAnimator(HumanAnimator):
         except AttributeError:
             pass
         HumanAnimator.turn(self, index, starting_index)
-
-    def _render(self, sprite):
-        HumanAnimator._render(self, sprite)
-        # debug render current car state to screen
-        import ai
-
-        state = util.get_enum_name(ai.VehicleState, self.entity.controller.state)
-        constants.SCREEN.draw_string(state, (20, 20), colour=(0, 0, 255))

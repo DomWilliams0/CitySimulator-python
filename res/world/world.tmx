@@ -148,8 +148,8 @@
   <object gid="9" x="880" y="240"/>
   <object gid="9" x="896" y="304"/>
   <object gid="9" x="624" y="112"/>
-  <object gid="9" x="576" y="80"/>
-  <object gid="9" x="544" y="48"/>
+  <object gid="9" x="560" y="528"/>
+  <object gid="9" x="624" y="48"/>
   <object gid="9" x="416" y="64"/>
   <object gid="9" x="352" y="48"/>
   <object gid="9" x="144" y="64"/>
@@ -175,14 +175,14 @@
    </properties>
   </object>
  </objectgroup>
- <objectgroup name="_spawns" visible="0">
-  <object x="528" y="112" width="64" height="64">
+ <objectgroup name="_spawns">
+  <object x="736" y="368" width="48" height="48">
    <properties>
     <property name="entitytype" value="human"/>
     <property name="orientation" value="R"/>
    </properties>
   </object>
-  <object x="0" y="112" width="32" height="32">
+  <object x="528" y="400" width="32" height="32">
    <properties>
     <property name="entitytype" value="vehicle"/>
     <property name="orientation" value="E"/>
