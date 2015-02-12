@@ -3,7 +3,6 @@ import random
 
 import pygame
 
-import state
 from vec2d import Vec2d
 import world as world_module
 import util
@@ -100,11 +99,14 @@ class Camera:
     Allows viewport scrolling
     """
 
-    def __init__(self, world, target=None):
+    def __init__(self, world, speed=2, target_entity=None):
         self.view_size = WINDOW_SIZE
-        self.pos = Vec2d(0, 0)
+        self.transform = util.Transform()
         self.velocity = Vec2d(0, 0)
-        self.target = target
+        self.speed = speed
+        self._target_entity = target_entity
+        self._target_position = None
+        self._target_world = None
 
         self.world = None
         self.world_dimensions = None
@@ -115,44 +117,55 @@ class Camera:
         """
         Gradually centres the target on screen, without leaving the world boundaries
         """
-        if not self.target:
+        # update target position
+        self._update_target_position()
+
+        if not self._target_position:
             return
 
-        if self.target.world != self.world:
-            return
+        # if self._target_world != self.world:
+        # return
 
-        v = self._direction_to_target(self.target.rect.center)
+        v = self._direction_to_target(self._target_position)
+
         if v.get_length_sqrd() < TILE_SIZE_SQRD / 2:
-            self.velocity.x, self.velocity.y = 0, 0
             return
 
-        self.velocity = v * 4
-        self.pos += self.velocity * DELTA
+        self.velocity = self.speed * v
+        self.move_camera()
 
+    def _update_target_position(self):
+        if self._target_entity:
+            self._target_position = self._target_entity.transform.as_tuple()
+
+    def move_camera(self):
+        self.transform += self.velocity * DELTA
         self._check_boundaries()
 
     def _check_boundaries(self):
-        self.pos[0] = max(self.boundaries[0], self.pos[0])
-        self.pos[1] = max(self.boundaries[1], self.pos[1])
-        self.pos[0] = min(self.boundaries[2], self.pos[0])
-        self.pos[1] = min(self.boundaries[3], self.pos[1])
+        self.transform.x = max(self.boundaries[0], self.transform.x)
+        self.transform.y = max(self.boundaries[1], self.transform.y)
+        self.transform.x = min(self.boundaries[2], self.transform.x)
+        self.transform.y = min(self.boundaries[3], self.transform.y)
 
-    def centre(self, target=None):
+    def centre(self, target_position=None):
         """
-        Centres the target entity immediately
-        :param target If None, then the current target
+        Centres the target position immediately
+        :param target_position If None, then the current target
         """
-        if not target:
-            if not self.target:
+
+        if not target_position:
+            self._update_target_position()
+            if not self._target_position:
                 return
-            target = self.target
+            target_position = self._target_position
 
-        self.pos += self._direction_to_target(target.rect.center)
-        self.velocity = 0
+        self.transform += self._direction_to_target(target_position)
+        self.velocity.zero()
         self._check_boundaries()
 
     def _direction_to_target(self, pos):
-        camera_centre = Vec2d(self.pos[0] + self.view_size[0] / 2, self.pos[1] + self.view_size[1] / 2)
+        camera_centre = Vec2d(self.transform.x + self.view_size[0] / 2, self.transform.y + self.view_size[1] / 2)
         target_centre = Vec2d(pos)
         return target_centre - camera_centre
 
@@ -162,13 +175,13 @@ class Camera:
         :param rect Either a util.Rect or a tuple ((x, y), (w, h))
         """
         if not isinstance(rect, util.Rect):
-            rect = rect[0]
+            rect = rect.x
         else:
             rect = rect.x, rect.y
         return self.apply(rect)
 
     def apply(self, tup):
-        return tup[0] - self.pos[0], tup[1] - self.pos[1]
+        return tup[0] - self.transform.x, tup[1] - self.transform.y
 
     def update_boundaries(self, world):
         self.world = world
@@ -191,7 +204,13 @@ class Camera:
     def __setattr__(self, key, value):
         self.__dict__[key] = value
         if key == "target":
-            self.centre(value)
+            if isinstance(value, tuple):
+                self._target_position = value
+                self._target_entity = None
+            else:
+                self._target_entity = value
+                self._target_world = value.world if value is not None else None
+                self._target_position = None
 
 
 class Speed:
@@ -201,6 +220,9 @@ class Speed:
     HUMAN_MIN = 80
     HUMAN_FAST = 100
     HUMAN_MAX = 180
+
+    CAMERA_MIN = 220
+    CAMERA_FAST = 450
 
     WTF_DEBUG = 800
 
@@ -226,6 +248,13 @@ class Direction:
         else:
             return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
 
+    @staticmethod
+    def delta_to_direction(delta, vertical):
+        if vertical:
+            return Direction.SOUTH if delta > 0 else Direction.NORTH
+        else:
+            return Direction.EAST if delta > 0 else Direction.WEST
+
 
 class EntityType:
     HUMAN = 0
@@ -241,7 +270,8 @@ class EntityType:
         return EntityType.ALL
 
 
-STATEMANAGER = state.StateManager()
+STATEMANAGER = None
+RUNNING = True
 SCREEN = GameScreen()
 DELTA = 0
 FPS = 0

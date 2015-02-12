@@ -31,6 +31,7 @@ class Entity(Sprite):
         self.image = Surface(dimensions).convert()
         self.rect = util.Rect(self.image.get_rect())
         self.aabb = util.Rect(self.rect)
+        self.transform = util.Transform()
 
         self.world = world
         world.spawn_entity(self, loc)
@@ -80,8 +81,6 @@ class Entity(Sprite):
         """
         Moves the aabb by velocity * delta, according to collisions
         """
-        # rounding compensation
-        delta = self.velocity * constants.DELTA
         """
         rects are no longer rounded to nearest int
         if delta[0] < 0:
@@ -90,8 +89,9 @@ class Entity(Sprite):
             delta[1] += 1
         """
 
-        self.aabb.add_vector(delta)
-        self.catchup_aab()
+        delta = self.velocity * constants.DELTA
+        delta += self.aabb.center
+        self.move_entity(*delta)
 
         # collisions
         if self.world_collisions:
@@ -240,6 +240,7 @@ class Entity(Sprite):
         Moves the entity to the given coordinates
         """
         self.aabb.center = x, y
+        self.transform.set((x, y))
         self.catchup_aab()
 
     @staticmethod

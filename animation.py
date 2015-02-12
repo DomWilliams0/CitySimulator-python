@@ -10,6 +10,7 @@ import util
 
 def clone(sheet):
     import copy
+
     sheet_copy = copy.deepcopy(sheet)
     for seqi in xrange(len(sheet.sprites)):
         sequence = sheet.sprites[seqi]
@@ -203,6 +204,9 @@ class HumanAnimator:
         self.sequence_index = index
         self.walk_gen = self.spritesheet.get_sequence(self, index, starting_index)
 
+    def get_arrow_position(self):
+        return self.entity.aabb.x + (self.entity.aabb.width / 4.0), self.entity.aabb.y - self.entity.aabb.height * 1.8
+
 
 class VehicleAnimator(HumanAnimator):
     def __init__(self, entity, spritesheet):
@@ -234,3 +238,10 @@ class VehicleAnimator(HumanAnimator):
         except AttributeError:
             pass
         HumanAnimator.turn(self, index, starting_index)
+
+    def get_arrow_position(self):
+        pos = HumanAnimator.get_arrow_position(self)
+        if self.entity.direction == constants.Direction.EAST:
+            pos = pos[0] + self.entity.aabb.width / 4, pos[1]
+
+        return pos

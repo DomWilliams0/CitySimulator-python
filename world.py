@@ -42,7 +42,7 @@ class WorldRenderer:
             self.surface.fill((0, 0, 0, 0))
 
         def render(self):
-            constants.SCREEN.blit(self.surface, (-constants.SCREEN.camera.pos[0], -constants.SCREEN.camera.pos[1]))
+            constants.SCREEN.blit(self.surface, (-constants.SCREEN.camera.transform.x, -constants.SCREEN.camera.transform.y))
 
     def __init__(self, world):
         self.layers = []
@@ -254,7 +254,7 @@ class BaseWorld:
         # find screen boundaries
         if render:
             camera = constants.SCREEN.camera
-            pos = tuple(int(x / constants.TILE_SIZE) for x in camera.pos)
+            pos = tuple(int(x / constants.TILE_SIZE) for x in camera.transform)
             x2 = camera.view_size[0] / constants.TILE_SIZE + pos[0] + 1
             y2 = camera.view_size[1] / constants.TILE_SIZE + pos[1] + 1
             if x2 >= self.tile_width:
@@ -540,24 +540,25 @@ class World(BaseWorld):
     def tick(self, render=True):
         BaseWorld.tick(self, render)
         # debug terrible rendering of lanes
-        for road in self.roadmap.roads:
-            i = 0
-            for r in road._bounds:
-                pixel = util.Rect(r)
-                colour = (255, 255, 0) if i > 1 else (0, 255, 255)
-                i += 1
-                for a in ('x', 'y', 'width', 'height'):
-                    util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
-                constants.SCREEN.draw_rect(pixel, filled=False, colour=colour)
+        if False and render:
+            for road in self.roadmap.roads:
+                i = 0
+                for r in road._bounds:
+                    pixel = util.Rect(r)
+                    colour = (255, 255, 0) if i > 1 else (0, 255, 255)
+                    i += 1
+                    for a in ('x', 'y', 'width', 'height'):
+                        util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
+                    constants.SCREEN.draw_rect(pixel, filled=False, colour=colour)
 
-        for node in self.roadmap.nodes.values():
-            constants.SCREEN.draw_circle_in_tile(util.tile_to_pixel(node.point))
+            for node in self.roadmap.nodes.values():
+                constants.SCREEN.draw_circle_in_tile(util.tile_to_pixel(node.point))
 
-            # for r in self.roadmap.temp_regions:
-            # pixel = util.Rect(r)
-            #     for a in ('x', 'y', 'width', 'height'):
-            #             util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
-            #     constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
+                # for r in self.roadmap.temp_regions:
+                # pixel = util.Rect(r)
+                # for a in ('x', 'y', 'width', 'height'):
+                # util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
+                #     constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
 
 
 class BuildingWorld(BaseWorld):

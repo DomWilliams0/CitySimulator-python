@@ -316,7 +316,7 @@ class Vec2d:
         return self
 
     def truncate(self, limit):
-        if self.get_length_sqrd() > limit*limit:
+        if self.get_length_sqrd() > limit * limit:
             l = self.length
             self.x /= l
             self.y /= l

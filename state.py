@@ -1,5 +1,7 @@
 import random
 import logging
+import operator
+import sys
 
 import pygame
 
@@ -128,23 +130,14 @@ class StateManager:
         except AttributeError:
             pass
 
-    def transfer_control(self, entity):
+    def transfer_control(self, entity, camera_centre=False):
+        if self.controller.entity == entity:
+            return
 
-        # pop off control override from old controller, if any
-        # if self.player_controller is not None:
-        # self.player_controller.set_suppressed_behaviours(False)
-        #
-        # if not entity:
-        #     self.player_controller = None
-        # else:
-        #     self.player_controller = entity.controller
-        #     self.player_controller.set_suppressed_behaviours(True)
-        #     self.follow_with_camera(entity)
         self.controller.control(entity)
-        self.follow_with_camera(entity)
-
-    def follow_with_camera(self, entity):
         constants.SCREEN.camera.target = entity
+        if camera_centre:
+            constants.SCREEN.camera.centre()
 
     def get_current(self):
         return self._stack.top
@@ -170,12 +163,7 @@ class State:
         """
         Processes events
         """
-        controller = constants.STATEMANAGER.controller
-        if controller:
-            controller.handle(event)
-
-    def handle_user_event(self, e):
-        pass
+        constants.STATEMANAGER.controller.handle_event(event)
 
     def tick(self):
         """
@@ -183,6 +171,7 @@ class State:
         """
         for w in world_module.WORLDS:
             w.tick(render=(w == self.world))
+        constants.STATEMANAGER.controller.tick()
 
     def on_load(self):
         """
@@ -199,7 +188,7 @@ class State:
 
 class GameState(State):
     def __init__(self):
-        State.__init__(self, mouse_visible=False)
+        State.__init__(self)
         self.building_timer = 0
 
         # load spritesheets
@@ -210,26 +199,45 @@ class GameState(State):
         logging.info("Loaded %d worlds" % len(world_module.WORLDS))
 
         constants.SCREEN.set_camera_world(self.world)
-        # constants.STATEMANAGER.human_controller.entity = Human(self.world)  # debug creates a new human and follows him
-        # constants.SCREEN.camera.target = constants.STATEMANAGER.human_controller.entity
+        constants.STATEMANAGER.controller.set_camera(constants.SCREEN.camera)
 
         # render worlds
         for w in world_module.WORLDS:
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(1):
-            h = Human(self.world)
-            constants.STATEMANAGER.transfer_control(h)
+        for _ in xrange(3):
+            Human(self.world)
 
         # add some vehicles
-        for _ in xrange(0):
+        for _ in xrange(1):
             Vehicle(self.world)
 
-        # debug vehicle to control
-        v = Vehicle(self.world)
-        # constants.STATEMANAGER.follow_with_camera(v)
-        # constants.STATEMANAGER.transfer_control(v)
+        # centre on a random entity
+        constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform.as_tuple())
+
+    def handle_event(self, event):
+        # controller selection
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            world_pos = map(operator.add, event.pos, constants.SCREEN.camera.transform)
+
+            # find closest entity within a tile's distance of the mouse
+            closest = None
+            closest_distance = sys.maxsize
+            for entity in self.world.entities:
+                dist = util.distance_sqrd(entity.transform.as_tuple(), world_pos)
+                if dist < constants.TILE_SIZE_SQRD and dist < closest_distance:
+                    closest_distance = dist
+                    closest = entity
+
+            if closest:
+                constants.STATEMANAGER.transfer_control(closest)
+
+        # release controler
+        elif event.type == pygame.KEYDOWN and event.key == pygame.K_e:
+            constants.STATEMANAGER.transfer_control(None)
+        else:
+            State.handle_event(self, event)
 
     def tick(self):
         State.tick(self)

@@ -203,7 +203,8 @@ class Rect:
         return 4
 
     def add_vector(self, vec2d):
-        setattr(self, "center", (self.center[0] + vec2d.x, self.center[1] + vec2d.y))
+        self.x += vec2d.x
+        self.y += vec2d.y
 
     def colliderect(self, r):
         r = self._tuple_from_arg(r)
@@ -317,3 +318,28 @@ class TimeTicker:
     def reset(self):
         self.time = 0
         self.limit = next(self._reset)
+
+
+# todo: just like unity, so we can control entities and the camera with the same functions
+class Transform:
+    def __init__(self):
+        self.x = 0.0
+        self.y = 0.0
+
+    def set(self, pos):
+        self.x, self.y = pos
+
+    def as_tuple(self):
+        return self.x, self.y
+
+    def __add__(self, other):
+        self.x += other[0]
+        self.y += other[1]
+        return self
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def __repr__(self):
+        return "Transform(%d, %d)" % (self.x, self.y)

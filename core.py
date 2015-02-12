@@ -1,35 +1,36 @@
+import os
+
 import pygame
 
 import constants
-from state import GameState
+import state
 
 
 class Game:
     def __init__(self):
         constants.SCREEN.create_window()
-        constants.STATEMANAGER.change_state(GameState())
-
-        self.running = True
+        constants.STATEMANAGER = state.StateManager()
+        constants.STATEMANAGER.change_state(state.GameState())
 
     def start(self):
         """
         Sets up and runs the game
         """
         clock = pygame.time.Clock()
-        while self.running:
+        while constants.RUNNING:
             constants.DELTA = (clock.tick(60) / 1000.0)
-            state = constants.STATEMANAGER.get_current()
+            current_state = constants.STATEMANAGER.get_current()
 
             for event in pygame.event.get():
-                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                    quit()
+                if event.type == pygame.QUIT:
+                    constants.RUNNING = False
                 elif event.type == pygame.USEREVENT:
                     constants.STATEMANAGER.handle_user_event(event)
                 else:
-                    state.handle_event(event)
+                    current_state.handle_event(event)
 
-            constants.SCREEN.fill(state.background_colour)
-            state.tick()
+            constants.SCREEN.fill(current_state.background_colour)
+            current_state.tick()
 
             try:
                 constants.STATEMANAGER.tick_transition()
@@ -40,12 +41,6 @@ class Game:
             constants.SCREEN.draw_fps(clock.get_fps())
             pygame.display.flip()
 
-    def quit(self):
-        """
-        Allows the game to gracefully quit
-        """
-        self.running = False
-
     def __setattr__(self, key, value):
         if key == "state":
             pygame.mouse.set_visible(value.mouse_visible)
@@ -54,8 +49,6 @@ class Game:
 
 
 def _centre_window():
-    import os
-
     os.environ['SDL_VIDEO_CENTERED'] = '1'
 
 
@@ -64,3 +57,4 @@ if __name__ == '__main__':
 
     pygame.init()
     Game().start()
+    pygame.quit()

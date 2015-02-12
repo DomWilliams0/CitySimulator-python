@@ -36,17 +36,17 @@ class BaseController:
     #
     # def set_suppressed_behaviours(self, suppress):
     # if suppress and self._behaviours.top is not None:
-    #         self.add_behaviour(None)
-    #     elif not suppress and self._behaviours.top is None:
-    #         self.remove_current_behaviour()
+    # self.add_behaviour(None)
+    # elif not suppress and self._behaviours.top is None:
+    # self.remove_current_behaviour()
     #
     # def _tick_current_behaviour(self):
-    #     top_exists = self._behaviours.top is not None
-    #     if top_exists:
-    #         self._behaviours.top.tick()
+    # top_exists = self._behaviours.top is not None
+    # if top_exists:
+    # self._behaviours.top.tick()
     #     return top_exists
 
-    def suppress(self, suppressed):
+    def suppress_ai(self, suppressed):
         self._suppressed_behaviour = suppressed
 
     def tick(self):
@@ -58,7 +58,14 @@ class BaseController:
             self.behaviour_tree.tick()
 
     def handle_event(self, e):
-        self.handle(*event.simplify_key_event(e))
+        """
+        :return: True if event has been processed and hence consumed, otherwise False
+        """
+        key_event = event.simplify_key_event(e)
+        if key_event:
+            self.handle(*key_event)
+            return True
+        return False
 
     def move_in_direction(self, direction, stop=True):
         if stop:
@@ -72,8 +79,14 @@ class BaseController:
 
     def halt(self):
         for k in self.wasd:
-            self.wasd[k] = False
+            self.handle(False, k)
         self._move_entity()
+
+    def on_control_start(self):
+        pass
+
+    def on_control_end(self):
+        pass
 
     def _get_direction(self, vertical):
         n = self._key_from_index(0 if vertical else 1)
@@ -105,25 +118,50 @@ class BaseController:
 
 class InputController:
     def __init__(self):
-        # self.controllers = {entity.Human: BaseController, entity.Vehicle: VehicleController}
         self.entity = None
         self.current = None
+        self._camera_controller = CameraController()
+        self._arrow = pygame.image.load(util.get_relative_path("sprites\misc\controller_arrow.png")).convert_alpha()
+
+    def set_camera(self, camera):
+        self._camera_controller.entity = camera
 
     def control(self, the_entity):
-        # cls = self.controllers.get(the_entity.__class__)
-        # if cls:
-        # self.entity = the_entity
-        # self.current = the_entity.controller
-        # self.current = cls(the_entity)
-
         if self.current:
-            self.current.suppress(False)
-        self.current = the_entity.controller
-        self.current.suppress(True)
-        self.entity = the_entity
+            self.current.suppress_ai(False)
+            self.current.on_control_end()
 
-    def handle(self, e):
+        self.entity = the_entity
+        if the_entity:
+            self.current = the_entity.controller
+            self.current.suppress_ai(True)
+            self.current.on_control_start()
+        else:
+            self.current = None
+
+        self._camera_controller.halt()
+
+    def tick(self):
         if not self.current:
+            self._camera_controller.tick()
+        else:
+            arrow_pos = self.entity.animator.get_arrow_position()
+            constants.SCREEN.blit(self._arrow, constants.SCREEN.camera.apply(arrow_pos))
+
+    def handle_global_event(self, e):
+        consumed = False
+        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+            constants.RUNNING = False
+            consumed = True
+
+        return consumed
+
+    def handle_event(self, e):
+        if self.handle_global_event(e):
+            return
+
+        if not self.current:
+            self._camera_controller.handle_event(e)
             return
 
         se = event.simplify_key_event(e)
@@ -131,7 +169,6 @@ class InputController:
             return
 
         keydown, key = se
-
         self.current.handle(keydown, key)
 
         try:
@@ -139,34 +176,40 @@ class InputController:
                 if key == pygame.K_j:
                     util.debug_block(self.entity.rect.center, self.entity.world)
 
-                if key == pygame.K_n:
+                elif key == pygame.K_n:
                     for b in self.entity.world.buildings:
                         for w in b.windows.keys():
                             b.set_window(w, random.random() < 0.5)
-                if key == pygame.K_g:
+                elif key == pygame.K_g:
                     h = entity.Human(self.entity.world)
                     h.move_entity(*self.entity.rect.center)
 
-                if key == pygame.K_h:
+                elif key == pygame.K_h:
                     v = entity.Vehicle(self.entity.world)
                     v.move_entity(*self.entity.rect.center)
 
-                if key == pygame.K_l:
+                elif key == pygame.K_l:
                     print(self.entity.get_current_tile())
         except AttributeError:
             pass
 
 
-class HumanController(BaseController):
-    def __init__(self, the_entity):
+class GeneralEntityController(BaseController):
+    def __init__(self, the_entity, min_speed, fast_speed, max_speed_or_random):
+        """
+        :param max_speed_or_random: If None, then normal speed and sprint speed are set to min_speed and fast_speed respectively.
+                                    Otherwise, normal speed is randomly selected beteween min_speed and fast_speed, and
+                                    sprint speed is randomly selected between normal speed and max_speed
+        """
+
         BaseController.__init__(self, the_entity)
         self.sprint = False
-        self.speed = random.randrange(constants.Speed.HUMAN_MIN, constants.Speed.HUMAN_FAST)
-        self.sprint_speed = self.speed + random.randrange(constants.Speed.HUMAN_MAX - self.speed)
-
-        # walk = EntityMoveToLocation(self, (random.randrange(13, 19), random.randrange(6, 12)))
-        # debug = DebugPrint("I, %r, am hearby debugged" % hex(id(self.entity)))
-        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self)))
+        if max_speed_or_random:
+            self.speed = random.randrange(min_speed, fast_speed)
+            self.sprint_speed = self.speed + random.randrange(max_speed_or_random - self.speed / 2)
+        else:
+            self.speed = min_speed
+            self.sprint_speed = fast_speed
 
     def _get_speed(self):
         return self.sprint_speed if self.sprint else self.speed
@@ -177,6 +220,80 @@ class HumanController(BaseController):
             self._move_entity()
         else:
             BaseController.handle(self, keydown, key)
+
+
+class CameraController(GeneralEntityController):
+    def __init__(self):
+        GeneralEntityController.__init__(self, None, constants.Speed.CAMERA_MIN, constants.Speed.CAMERA_FAST, None)
+        self._drag = VehicleController.Pedal(0.3)
+        self.border_thickness = 20
+        self.screen_boundary = map(lambda x: x - self.border_thickness, constants.WINDOW_SIZE)
+        self.entity = None
+
+    def tick(self):
+        if self._drag.is_applied():
+            self.entity.velocity *= self._drag.get_force()
+        self.entity.move_camera()
+
+    def _mouse_border_to_direction(self, mouse_pos):
+
+        def check_coord(coord, x_or_y_coord):
+            """
+            :return: World coordinate off the edge of the screen, for camera to target
+            """
+            if coord < self.border_thickness:
+                return self.border_thickness - coord
+            elif coord > self.screen_boundary[x_or_y_coord]:
+                return constants.WINDOW_SIZE[x_or_y_coord] + (self.screen_boundary[x_or_y_coord] - coord)
+            return 0
+
+        dx = check_coord(mouse_pos[0], 0)
+        dy = check_coord(mouse_pos[1], 1)
+
+        return dx, dy
+
+    def halt(self):
+        self._drag.set_applied(True, override=True)
+        BaseController.halt(self)
+
+    # def handle_event(self, e):
+    # consumed = BaseController.handle_event(self, e)
+    # if not consumed:
+    # # move camera towards mouse
+    #         # todo: shoots there way too fast
+    #         if e.type == pygame.MOUSEMOTION:
+    #             pos = self._mouse_border_to_direction(e.pos)
+    #             if pos == (0, 0):
+    #                 cam_target = None
+    #             else:
+    #                 print(pos)
+    #                 cam_target = tuple(map(operator.add, pos, self.entity.transform))
+    #             constants.SCREEN.camera.target = cam_target
+
+    def _move_entity(self):
+        speed = self._get_speed()
+        hdir = self._get_direction(False)
+        vdir = self._get_direction(True)
+        if hdir or vdir:
+            self.entity.velocity.x = hdir * speed
+            self.entity.velocity.y = vdir * speed
+            dragging = False
+        else:
+            dragging = True
+
+        self._drag.set_applied(dragging)
+
+
+class HumanController(GeneralEntityController):
+    def __init__(self, the_entity):
+        GeneralEntityController.__init__(self, the_entity, constants.Speed.HUMAN_MIN, constants.Speed.HUMAN_FAST, constants.Speed.HUMAN_MAX)
+
+        # walk = EntityMoveToLocation(self, (random.randrange(13, 19), random.randrange(6, 12)))
+        # debug = DebugPrint("I, %r, am hearby debugged" % hex(id(self.entity)))
+        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self)))
+
+    def on_control_start(self):
+        self.halt()
 
 
 class VehicleController(BaseController):
@@ -204,11 +321,11 @@ class VehicleController(BaseController):
         def is_applied(self):
             return self._applied
 
-        def set_applied(self, applied):
+        def set_applied(self, applied, override=False):
             self._was_applied = self._applied
             self._applied = applied
 
-            if applied != self._was_applied:
+            if applied != self._was_applied or override:
                 if applied:
                     self._gen = self._pedal_force_gen(self.brake_time)
                 else:
@@ -309,7 +426,6 @@ class VehicleController(BaseController):
     def tick(self):
         # todo: only change direction to opposite if stopped, otherwise brake
         BaseController.tick(self)
-        # self.btree.tick()
 
         # None if no key, brake_key if brake is held down
         current = self._get_pressed_key()
@@ -344,8 +460,6 @@ class VehicleController(BaseController):
         self.last_pos = self.entity.aabb.topleft
         self.last_directions[0], self.last_directions[1] = self._get_direction(False), self._get_direction(True)
 
-        # if self.state != self.last_state:
-        # print(">>>>> %s" % util.get_enum_name(VehicleController, self.state))
         self.last_state = self.state
 
         """
@@ -373,12 +487,8 @@ class VehicleController(BaseController):
         """
 
     def _move_entity(self):
-        # if self.brake.is_applied():
-        # self.current_speed *= self.brake.get_force()
-
         if self.state != VehicleController.ACCELERATING and self.state != VehicleController.STOPPED and self._has_virtually_stopped():
             self.halt()
-
         else:
             BaseController._move_entity(self)
 
@@ -417,10 +527,14 @@ class VehicleController(BaseController):
         return self._keystack.top if not self.brake.is_applied() else _BRAKE_KEY
 
     def halt(self):
-        BaseController.halt(self)
         self.entity.velocity.zero()
         self.current_speed = 0
         self.state = VehicleController.STOPPED
+        self.press_pedal(VehicleController.STOPPED)
+
+    def on_control_end(self):
+        self._keystack.clear()
+        self.press_pedal(VehicleController.DRIFTING)
 
 
 # class BaseBehaviour:
@@ -428,16 +542,16 @@ class VehicleController(BaseController):
 # self.entity = the_entity
 # self.controller = the_entity.controller
 #
-#     def tick(self):
-#         pass
+# def tick(self):
+# pass
 #
-#     def handle(self, keydown, key):
-#         self.controller.handle(keydown, key)
+# def handle(self, keydown, key):
+# self.controller.handle(keydown, key)
 #
 #
 # class RandomHumanWanderer(BaseBehaviour):
-#     def __init__(self, the_entity):
-#         # BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
+# def __init__(self, the_entity):
+# # BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
 #         BaseBehaviour.__init__(self, the_entity)
 #         self.ticker = util.TimeTicker((0.05, 0.4))
 #
@@ -785,10 +899,7 @@ class EntityMoveToLocation(EntityLeafTask):
         # return Task.FAILURE
 
         # get movement direction
-        if abs(dx) > self._size:
-            direction = constants.Direction.EAST if dx > 0 else constants.Direction.WEST
-        else:
-            direction = constants.Direction.SOUTH if dy > 0 else constants.Direction.NORTH
+        direction = constants.Direction.delta_to_direction(dx, abs(dx) <= self._size)
 
         # move
         self.controller.move_in_direction(direction)
