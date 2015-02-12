@@ -1,6 +1,7 @@
 import logging
 import random
 import os
+import copy
 
 import pygame
 
@@ -9,7 +10,9 @@ import util
 
 
 def clone(sheet):
-    import copy
+    """
+    Clones the given spritesheet (and all frame surfaces of all sequences)
+    """
 
     sheet_copy = copy.deepcopy(sheet)
     for seqi in xrange(len(sheet.sprites)):
@@ -24,9 +27,20 @@ def clone(sheet):
 
 
 class BaseSpriteSheet:
+    """
+    Base sprite sheet that contains animation sequences
+    """
     LOADED = {}
 
     def __init__(self, path, height, length, animation_type, nickname=None):
+        """
+        :param path: File path
+        :param height: Height of spritesheet, and hence number of sequences
+        :param length: The frame count of each sequence
+        :param animation_type: EntityType of animation
+        :param nickname: Optional nickname, otherwise the (trimmed) filename
+        :return:
+        """
         self.nickname = path.split(os.sep)[-1][:-4] if not nickname else nickname
         self.sprites = [[] for _ in xrange(height)]
         self.sheet = pygame.image.load(path).convert_alpha()
@@ -37,7 +51,13 @@ class BaseSpriteSheet:
         logging.debug("Spritesheet loaded: [%s]" % self.nickname)
 
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
-        # width = sheet_dimensions[0] / sprite_dimensions[0]
+        """
+        Loads the sprites into sequences
+        :param sheet_dimensions: The dimensions of the spritesheet
+        :param sprite_dimensions: The dimensions of each frame
+        :param row_count: The number of rows to load
+        :param start_y: The row to begin at
+        """
         height = sheet_dimensions[1] / sprite_dimensions[1]
 
         rows = 0
@@ -46,7 +66,7 @@ class BaseSpriteSheet:
         for y in xrange(start_y, height):
             for _ in xrange(self.length):
                 sprite = pygame.Surface(sprite_dimensions, 0, self.sheet).convert_alpha()
-                sprite.blit(self.sheet, (0, 0), rect.to_tuple())
+                sprite.blit(self.sheet, (0, 0), rect.as_tuple())
                 self.sprites[y].append(sprite)
                 rect.x += sprite_dimensions[0]
 
@@ -76,6 +96,13 @@ class BaseSpriteSheet:
                 delta = 0
                 i += 1
 
+    def _rearrange_directional_sprites(self):
+        """
+        Rearranges animations given in SWEN to NWSE, to remain consistent with Direction
+        """
+        good_order = (3, 1, 0, 2)
+        self.sprites = [self.sprites[i] for i in good_order]
+
 
 def get(nickname):
     """
@@ -85,15 +112,23 @@ def get(nickname):
 
 
 def get_random(animation_type=None):
-    timeout = len(BaseSpriteSheet.LOADED) * 4
+    """
+    :param animation_type: If None, all types are chosen from
+    :return: Random spritesheet of the given entitytype
+    """
+    timeout = len(BaseSpriteSheet.LOADED) * 100
     for _ in xrange(timeout):
         x = random.choice(BaseSpriteSheet.LOADED.values())
         if x.type == animation_type or animation_type is None:
             return x
+    logging.error("A random spritesheet of type %s could not be found!" % (util.get_enum_name(constants.EntityType, animation_type)))
     return None
 
 
 def load_all():
+    """
+    Loads all spritesheets in the sprites directory
+    """
     # raise NotImplementedError("Load them manually now, learn to glob another day")
     import os
 
@@ -114,6 +149,10 @@ def load_all():
 
 
 class HumanSpriteSheet(BaseSpriteSheet):
+    """
+    Spritesheet for humans
+    """
+
     def __init__(self, path, sheet_dimensions, sprite_dimensions, length):
         """
         :param path: Absolute path
@@ -122,16 +161,31 @@ class HumanSpriteSheet(BaseSpriteSheet):
         """
         BaseSpriteSheet.__init__(self, path, 4, length, constants.EntityType.HUMAN)
         self._load_sprites(sheet_dimensions, sprite_dimensions, -1, 0)
+        self._rearrange_directional_sprites()
 
 
 class VehicleSpriteSheet(BaseSpriteSheet):
+    """
+    Spritsheet for vehicles
+    """
+
     def __init__(self, path, sheet_dimensions, starting_dimensions, ending_dimensions, length):
+        """
+        :param path: Absolute path
+        :param sheet_dimensions: The pixel dimensions of the spritesheet ie (128, 128)
+        :param starting_dimensions: Beginning sprite dimensions
+        :param ending_dimensions: Ending sprite dimensions (in other sequences)
+        """
         BaseSpriteSheet.__init__(self, path, 4, length, constants.EntityType.VEHICLE)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 0)
         self._load_sprites(sheet_dimensions, ending_dimensions, 2, 1)
         self._load_sprites(sheet_dimensions, starting_dimensions, 1, 3)
+        self._rearrange_directional_sprites()
 
     def set_colour(self, colour):
+        """
+        Sets the car's colour to the given colour
+        """
         for seq in self.sprites:
             for sprite in seq:
                 pixels = pygame.PixelArray(sprite)
@@ -162,6 +216,9 @@ class HumanAnimator:
         self.last_speed = self._get_speed()
 
     def _get_speed(self):
+        """
+        :return: absolute (non-directional) speed of the entity
+        """
         v = self.entity.velocity
         if v[0] != 0:
             return abs(v[0])
@@ -175,6 +232,9 @@ class HumanAnimator:
         self._render(sprite)
 
     def _next_sprite(self):
+        """
+        :return: The next sprite in the current animation sequence
+        """
         moving = self.entity.is_moving()
         if moving:
             if not self.was_moving:
@@ -193,6 +253,9 @@ class HumanAnimator:
         return sprite
 
     def _render(self, sprite):
+        """
+        Renders the given sprite to the screen
+        """
         constants.SCREEN.draw_sprite(sprite, self.entity.rect)
 
     def turn(self, index, starting_index=0):
@@ -205,16 +268,25 @@ class HumanAnimator:
         self.walk_gen = self.spritesheet.get_sequence(self, index, starting_index)
 
     def get_arrow_position(self):
+        """
+        :return: The position at which to render the player controller arrow
+        """
         return self.entity.aabb.x + (self.entity.aabb.width / 4.0), self.entity.aabb.y - self.entity.aabb.height * 1.8
 
 
 class VehicleAnimator(HumanAnimator):
+    """
+    Animator for vehicles
+    """
     def __init__(self, entity, spritesheet):
         HumanAnimator.__init__(self, entity, spritesheet)
         self.was_horizontal = self._is_horizontal(entity.direction)
         self.last_direction = entity.direction
 
     def _is_horizontal(self, direction):
+        """
+        :return: True if the given direction is east/west, otherwise False
+        """
         return direction in constants.Direction.HORIZONTALS
 
     def turn(self, index, starting_index=0, speed=-1):

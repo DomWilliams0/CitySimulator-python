@@ -183,7 +183,10 @@ class Entity(Sprite):
         return bool(self.velocity)
 
     def get_current_tile(self):
-        return util.pixel_to_tile(self.aabb.topleft)
+        """
+        :return: The current tile position
+        """
+        return util.pixel_to_tile(self.transform.as_tuple())
 
     def handle_collisions(self):
         """
@@ -231,9 +234,6 @@ class Entity(Sprite):
 
     def handle_interactions(self):
         pass
-
-    def interact_with_block(self, block, x, y):  # todo redundant
-        block.interact(self, x, y)
 
     def move_entity(self, x, y):
         """
@@ -305,7 +305,7 @@ class Human(Entity):
             try:
                 if block.building not in buildings:
                     buildings.add(block)
-                    self.interact_with_block(block, *r)
+                    block.interact(self, *r)
             except AttributeError:
                 pass
 
@@ -326,6 +326,9 @@ class Vehicle(Entity):
         self.rect.center = self.aabb.midtop
 
     def _random_colour(self, alpha=255):
+        """
+        :return: A (hopefully) pretty random colour
+        """
         high = random.randrange(127) + 127
         med = random.randrange(100) + 50
         low = random.randrange(50)

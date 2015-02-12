@@ -10,7 +10,7 @@ class Game:
     def __init__(self):
         constants.SCREEN.create_window()
         constants.STATEMANAGER = state.StateManager()
-        constants.STATEMANAGER.change_state(state.GameState())
+        constants.STATEMANAGER.change_state(state.OutsideWorldState())
 
     def start(self):
         """
@@ -49,6 +49,9 @@ class Game:
 
 
 def _centre_window():
+    """
+    Centres the window on the screen
+    """
     os.environ['SDL_VIDEO_CENTERED'] = '1'
 
 

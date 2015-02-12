@@ -8,7 +8,7 @@ import constants
 import world as world_module
 
 
-_SURROUNDING_OFFSETS = (0, 1), (-1, 0), (1, 0), (0, -1)  # conveniently in the order of Direction
+_SURROUNDING_OFFSETS = (0, -1), (-1, 0), (1, 0), (0, 1)
 
 
 def get_relative_path(path):
@@ -20,7 +20,11 @@ def get_relative_path(path):
     return os.path.join(os.path.dirname(__file__), "res", *split)
 
 
-def _find_resource(name):
+# todo doesn't search recursively
+def get_resource_path(name):
+    """
+    Convenience function for searching for the given file name in 'res'
+    """
     for root, dirs, files in os.walk(get_relative_path(".")):
         for f in files:
             if f.startswith(name):
@@ -28,48 +32,46 @@ def _find_resource(name):
     raise IOError("Could not find '%s' in resources" % name)
 
 
-def get_resource_path(name):
-    """
-    Convenience function for searching for the given file name in 'res'
-    """
-    return _find_resource(name)
-
-
 def is_almost(a, b, limit=1):
+    """
+    :return: True if the difference between a and b is within the given limit
+    """
     return abs(a - b) < limit
 
 
-def run_once(f):
-    """
-    Decorator to make sure the function is run only once
-    """
-
-    def func(*args, **kwargs):
-        if not func.has_run:
-            func.has_run = True
-            return f(*args, **kwargs)
-
-    func.has_run = False
-    return func
-
-
 def round_to_tile_size(x):
+    """
+    :return: Coordinate rounded to tile size
+    """
     return round_to_multiple(x, constants.TILE_SIZE)
 
 
 def round_to_multiple(x, multiple):
+    """
+    :return: x rounded to the nearest multiple of 'multiple'
+    """
     return int(multiple * round(float(x) / multiple))
 
 
 def pixel_to_tile(pos):
+    """
+    :return: The given pixel position converted to the corresponding tile position
+    """
     return pos[0] / constants.TILE_SIZE, pos[1] / constants.TILE_SIZE
 
 
 def tile_to_pixel(pos):
+    """
+    :return: The given tile position converted to the corresponding pixel position
+    """
     return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
 
 
 def parse_orientation(char):
+    """
+    :param char: NESW, or R for random
+    :return: The corresponding direction, otherwise south
+    """
     if char == "N":
         return constants.Direction.NORTH
     if char == "E":
@@ -84,6 +86,9 @@ def parse_orientation(char):
 
 
 def debug_block(pos, world):
+    """
+    Prints debug info about the given position
+    """
     print("----")
     pos = map(int, pos)
     print pos, world.get_solid_block(*pixel_to_tile(pos))
@@ -101,14 +106,24 @@ def debug_block(pos, world):
 
 
 def get_class(o):
+    """
+    :return: Prettified class name of given object
+    """
     return str(o.__class__).split(".")[1]
 
 
 def distance_sqrd(p1, p2):
+    """
+    :return: Square distance between given points
+    """
     return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
 
 
 def mix_colours(c1, c2, ensure_alpha=True):
+    """
+    :param ensure_alpha: If True, ensures that the returned colour is RGBA
+    :return: Mix of the given 2 colours
+    """
     mixed = [(a + b) / 2 for a, b in zip(c1, c2)]
     if ensure_alpha and len(mixed) == 3:
         mixed.append(255)
@@ -116,14 +131,27 @@ def mix_colours(c1, c2, ensure_alpha=True):
 
 
 def get_surrounding_offsets():
+    """
+    :return: 4 relative offsets
+    """
     return _SURROUNDING_OFFSETS
 
 
 def modify_attr(obj, attribute, func):
+    """
+    Modify current value of given attribute (ie +=)
+    :param obj: Object
+    :param attribute: Attribute name
+    :param func: Function with single argument: old value of attribute
+    """
     setattr(obj, attribute, func(getattr(obj, attribute)))
 
 
 def get_enum_name(enum_cls, value):
+    """
+    Debug function
+    :return: Enum name as string, instead of just an integer
+    """
     for k, v in enum_cls.__dict__.items():
         if not k.startswith("_") and v == value:
             return k
@@ -131,6 +159,10 @@ def get_enum_name(enum_cls, value):
 
 
 def find_difference(pos1, pos2, absolute):
+    """
+    :param absolute:
+    :return: If absolute, sorted absolute difference [0, 1] for example, otherwise the raw difference
+    """
     diff = map(operator.sub, pos1, pos2)
     if absolute:
         return sorted(map(abs, diff))
@@ -139,12 +171,21 @@ def find_difference(pos1, pos2, absolute):
 
 
 def add_direction(position, direction):
+    """
+    :return: Position modified by the given direction
+    """
     delta = _SURROUNDING_OFFSETS[direction]
     return map(operator.add, position, delta)
 
 
 class Rect:
+    """
+    Rectangle that supports floating point numbers
+    """
     def __init__(self, *args):
+        """
+        :param args: ((x, y), (w, h)) or (x, y, w, h) or another Rect
+        """
         l = len(args)
         if l == 2 and isinstance(args[0], tuple):  # ((,), (,))
             self._init(*self._tuple_from_arg(args))
@@ -202,10 +243,6 @@ class Rect:
     def __len__(self):
         return 4
 
-    def add_vector(self, vec2d):
-        self.x += vec2d.x
-        self.y += vec2d.y
-
     def colliderect(self, r):
         r = self._tuple_from_arg(r)
         return self.x + self.width > r[0] and r[0] + r[2] > self.x and self.y + self.height > r[1] and r[1] + r[3] > self.y
@@ -217,12 +254,18 @@ class Rect:
         return self.width * self.height
 
     def inflate(self, x, y):
+        """
+        :return: Expands evenly by given amounts
+        """
         self.x -= x / 2
         self.y -= y / 2
         self.width += x
         self.height += y
 
-    def to_tuple(self):
+    def as_tuple(self):
+        """
+        :return: Tuple of x, y, width, height
+        """
         return self.x, self.y, self.width, self.height
 
     def _tuple_from_arg(self, arg):
@@ -230,7 +273,7 @@ class Rect:
         if l == 2:
             return arg[0][0], arg[0][1], arg[1][0], arg[1][1]
         elif l == 1 and isinstance(arg, Rect):
-            return arg.to_tuple()
+            return arg.as_tuple()
         else:
             return arg
 
@@ -241,6 +284,9 @@ class Rect:
 
 
 class Stack:
+    """
+    Stack that makes keeping track of top element easy
+    """
     def __init__(self, *initvalues):
         self._data = []
         self.top = None
@@ -252,6 +298,9 @@ class Stack:
         return bool(self._data)
 
     def pop(self):
+        """
+        :return: Current top value, None if empty
+        """
         try:
             pop = self._data.pop()
         except IndexError:
@@ -260,10 +309,16 @@ class Stack:
         return pop
 
     def clear(self):
+        """
+        Pops all values
+        """
         self._data = []
         self.top = None
 
     def remove_item(self, x):
+        """
+        Removes the given item from the stack if it exists in it, otherwise does nothing
+        """
         try:
             self._data.remove(x)
             if x == self.top:
@@ -272,6 +327,9 @@ class Stack:
             pass
 
     def push(self, x):
+        """
+        Pushes the given value onto the top of the stack
+        """
         self._data.append(x)
         self.top = x
 
@@ -286,6 +344,9 @@ class Stack:
 
 
 class TimeTicker:
+    """
+    Ticks independantly of framerate
+    """
     def __init__(self, limit_or_range_range):
         """
         :param limit_or_range_range: Either constant seconds, or a (min, max) range for random times
@@ -316,20 +377,31 @@ class TimeTicker:
         return complete
 
     def reset(self):
+        """
+        Resets the ticker back to 0
+        """
         self.time = 0
         self.limit = next(self._reset)
 
 
-# todo: just like unity, so we can control entities and the camera with the same functions
 class Transform:
+    """
+    Simple x, y coordinate container
+    """
     def __init__(self):
         self.x = 0.0
         self.y = 0.0
 
     def set(self, pos):
+        """
+        Sets the coordinates to the given position
+        """
         self.x, self.y = pos
 
     def as_tuple(self):
+        """
+        :return: x, y
+        """
         return self.x, self.y
 
     def __add__(self, other):

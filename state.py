@@ -15,9 +15,16 @@ import util
 
 
 class Transition:
+    """
+    Base transition
+    """
     SCREEN_COVER = None
 
     def __init__(self, duration=1, tick_count=40):
+        """
+        :param duration: Seconds to last
+        :param tick_count: Number of times to tick
+        """
         self.duration = duration
         self._ticker = util.TimeTicker(float(duration) / tick_count)
         self.complete = False
@@ -25,10 +32,16 @@ class Transition:
             Transition.SCREEN_COVER = pygame.Surface(constants.WINDOW_SIZE).convert_alpha()
 
     def tick(self):
+        """
+        Called per frame
+        """
         raise NotImplemented("Empty transition")
 
 
 class FadeTransition(Transition):
+    """
+    Fades the screen from black
+    """
     def __init__(self):
         Transition.__init__(self)
         self.alpha = 255
@@ -45,6 +58,9 @@ class FadeTransition(Transition):
 
 
 class ZoomTransition(Transition):
+    """
+    Zooms out from black from the centre
+    """
     def __init__(self):
         Transition.__init__(self)
         scale = 10
@@ -59,11 +75,14 @@ class ZoomTransition(Transition):
             self.space.inflate(*self.dim)
 
         Transition.SCREEN_COVER.fill(State.BACKGROUND)
-        pygame.draw.rect(Transition.SCREEN_COVER, (0, 0, 0, 0), self.space.to_tuple())
+        pygame.draw.rect(Transition.SCREEN_COVER, (0, 0, 0, 0), self.space.as_tuple())
         constants.SCREEN.blit(Transition.SCREEN_COVER)
 
 
 class StateManager:
+    """
+    Manages the current state, and player input
+    """
     def __init__(self):
         self._stack = util.Stack()
         self.transition = None
@@ -73,7 +92,7 @@ class StateManager:
         """
         Switches to another state
         :param new_state: The state to switch to, or None to return to the previous
-        :param transition_cls: Optional transition class between the states
+        :param transition_cls: Optional transition class between the states, otherwise randomly chosen
         """
         if transition_cls is None:
             transition_cls = ZoomTransition if random.random() < 1.0 else FadeTransition
@@ -107,6 +126,11 @@ class StateManager:
             constants.SCREEN.camera.update_boundaries(current.world)
 
     def handle_user_event(self, e):
+        """
+        Handles custom events, called from event.py
+        :param e: pygame event
+        """
+
         if hasattr(e, "entity"):
             # prevent world transfer flicker
             e.entity.visible = True
@@ -123,6 +147,9 @@ class StateManager:
                         self.change_state()
 
     def tick_transition(self):
+        """
+        Ticks the current transition, if any
+        """
         try:
             self.transition.tick()
             if self.transition.complete:
@@ -131,6 +158,12 @@ class StateManager:
             pass
 
     def transfer_control(self, entity, camera_centre=False):
+        """
+        Transfers player control to the given entity
+        :param entity: If None, control is released completely (and the camera takes over)
+        :param camera_centre Should the camera immediately centre on the new controlled entity
+        """
+
         if self.controller.entity == entity:
             return
 
@@ -140,6 +173,9 @@ class StateManager:
             constants.SCREEN.camera.centre()
 
     def get_current(self):
+        """
+        :return: The current state
+        """
         return self._stack.top
 
 
@@ -186,37 +222,18 @@ class State:
         pass
 
 
-class GameState(State):
+class BaseGameState(State):
+    """
+    Base in-game state
+    """
     def __init__(self):
-        State.__init__(self)
-        self.building_timer = 0
-
-        # load spritesheets
-        animation.load_all()
-
-        # load main world, with all buildings
-        self.world = world_module.World.load_tmx("world.tmx")
-        logging.info("Loaded %d worlds" % len(world_module.WORLDS))
-
-        constants.SCREEN.set_camera_world(self.world)
-        constants.STATEMANAGER.controller.set_camera(constants.SCREEN.camera)
-
-        # render worlds
-        for w in world_module.WORLDS:
-            w.renderer.initial_render()
-
-        # add some humans
-        for _ in xrange(3):
-            Human(self.world)
-
-        # add some vehicles
-        for _ in xrange(1):
-            Vehicle(self.world)
-
-        # centre on a random entity
-        constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform.as_tuple())
+        State.__init__(self, mouse_visible=True)
 
     def handle_event(self, event):
+        """
+        Controls entity selection with the mouse, otherwise delegates event to current state
+        :param event: pygame event
+        """
         # controller selection
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             world_pos = map(operator.add, event.pos, constants.SCREEN.camera.transform)
@@ -234,10 +251,48 @@ class GameState(State):
                 constants.STATEMANAGER.transfer_control(closest)
 
         # release controler
-        elif event.type == pygame.KEYDOWN and event.key == pygame.K_e:
+        elif event.type == pygame.KEYDOWN and event.key == constants.Input.RELEASE_CONTROL:
             constants.STATEMANAGER.transfer_control(None)
         else:
             State.handle_event(self, event)
+
+
+class OutsideWorldState(BaseGameState):
+    """
+    Main world state
+    """
+
+    def __init__(self):
+        BaseGameState.__init__(self)
+        self.building_timer = 0
+
+        # load spritesheets
+        animation.load_all()
+
+        # load main world, with all buildings
+        self.world = world_module.World.load_tmx("world.tmx")
+        logging.info("Loaded %d worlds" % len(world_module.WORLDS))
+
+        constants.SCREEN.set_camera_world(self.world)
+        constants.STATEMANAGER.controller.set_camera(constants.SCREEN.camera)
+
+        # render worlds
+        for w in world_module.WORLDS:
+            w.renderer.initial_render()
+
+        # add some humans
+        for _ in xrange(4):
+            Human(self.world)
+
+        # add some vehicles
+        for _ in xrange(1):
+            Vehicle(self.world)
+
+        # centre on a random entity
+        constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform.as_tuple())
+
+        # move mouse to centre
+        pygame.mouse.set_pos(constants.WINDOW_CENTRE)
 
     def tick(self):
         State.tick(self)
@@ -252,8 +307,11 @@ class GameState(State):
                         b.set_window(random.choice(b.windows.keys()), random.random() < 0.5)
 
 
-class BuildingState(State):
+class BuildingState(BaseGameState):
+    """
+    Gamestate for building interiors
+    """
     def __init__(self, building):
-        State.__init__(self, mouse_visible=False)
+        BaseGameState.__init__(self)
         self.building = building
         self.world = building.inside

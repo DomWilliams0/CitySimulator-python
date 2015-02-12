@@ -36,6 +36,9 @@ class _WorldLayer:
 class WorldRenderer:
     class _RenderLayer:
         def __init__(self, world, layer_func):
+            """
+            :param layer_func: Predicate for choosing all world layers that this holds for
+            """
             self.world = world
             self.layers = [(n, l) for n, l in world.layers.items() if layer_func(n, l)]
             self.surface = pygame.Surface((world.pixel_width, world.pixel_height)).convert_alpha()
@@ -54,6 +57,9 @@ class WorldRenderer:
         # self.night.fill((5,5,60,160))
 
     def initial_render(self):
+        """
+        Renders each layer onto its respective surface
+        """
         for rlayer in self.layers:
             w = rlayer.world
             for name, l in rlayer.layers:
@@ -62,16 +68,27 @@ class WorldRenderer:
                         constants.SCREEN.draw_block(block, (util.tile_to_pixel((x, y)), constants.DIMENSION), surface=rlayer.surface)
 
     def render_sandwich(self, sandwiched_draw_function, args):
+        """
+        Renders the base layer, runs the given function with the given args, then renders all remaining layers
+        """
         self.layers[0].render()
         sandwiched_draw_function(*args)
         for i in xrange(1, len(self.layers)):
             self.layers[i].render()
 
     def render_block(self, block, pos, world_layer):
+        """
+        :param block: Block to render
+        :param pos: Block position
+        :param world_layer: World layer to render to
+        """
         rlayer = self._find_rlayer(world_layer)
         constants.SCREEN.draw_block(block, (util.tile_to_pixel(pos), constants.DIMENSION), surface=rlayer.surface)
 
     def _find_rlayer(self, wlayer):
+        """
+        :return: The RenderLayer that matches the given name
+        """
         for rl in self.layers:
             for n, _ in rl.layers:
                 if n == wlayer:
@@ -100,10 +117,16 @@ class BaseWorld:
 
         WORLDS.append(self)
 
-    def _post_init(self):
+    def _post_init_renderer(self):
+        """
+        Initialises the renderer
+        """
         self.renderer = WorldRenderer(self)
 
     def _reg_layer(self, name, draw_above=False, solid_blanks=False):
+        """
+        Registers a layer with the given name and properties
+        """
         if name in self.layers:
             logging.warning("Layer '%s' already exists in the world" % name)
         else:
@@ -234,7 +257,8 @@ class BaseWorld:
         # draw entitiesa
         for e in self.entities:
             if e.dead:
-                self.kick_entity(e)
+                # todo GET THAT BODY OUT OF HERE
+                pass
             else:
                 e.tick(render)  # todo only render on screen, maybe add function to entity to find if on screen? passing in camera coords
 
@@ -310,10 +334,16 @@ class BaseWorld:
                         yield (x, y, blocks[y][x])
 
     def is_in_range(self, tilex, tiley):
+        """
+        :return: Whether the given tile coords are inside the world
+        """
         return 0 <= tilex < self.tile_width and 0 <= tiley < self.tile_height
 
-    def is_direction_blocked(self, position, direction):
-        next_tile = util.add_direction(position, direction)
+    def is_direction_blocked(self, tile_position, direction):
+        """
+        :return: Whether there is a solid block blocking the way of the given position in the given direction
+        """
+        next_tile = util.add_direction(tile_position, direction)
         if not self.is_in_range(*next_tile):
             return True
 
@@ -336,17 +366,6 @@ class BaseWorld:
         """
         return Vec2d(random.randrange(self.pixel_width - size[0]), random.randrange(self.pixel_height - size[1]))
 
-    def kick_entity(self, entity):
-        """
-        Kicks the entity from the world
-        """
-        # try:
-        # self._transfer_to_buffer(entity, entity.world, None)
-        # entity.world = None
-        # except ValueError:
-        # pass
-        pass
-
     def _transfer_to_buffer(self, entity, from_world, to_world):
         """
         :param entity: Entity to transfer
@@ -368,12 +387,20 @@ class BaseWorld:
             entity.move_entity(*loc)
 
     def move_to_spawn(self, entity, index, vary=True):
+        """
+        :param index: Spawn index
+        :param vary: Should the spawn position be fuzzed a bit
+        """
+        assert self == entity.world
         spawn = self._spawns[entity.entitytype][index]
         pos = (spawn[0] + random.randrange(spawn[3]), spawn[1] + random.randrange(spawn[4])) if vary else spawn[:2]
         entity.move_entity(*pos)
         entity.turn(spawn[2])
 
     def spawn_entity_at_spawn(self, entity, spawn_index, vary=True):
+        """
+        Convenience function for moving an entity to this world at the given spawn index
+        """
         self.spawn_entity(entity)
         self.move_to_spawn(entity, spawn_index, vary)
 
@@ -507,12 +534,23 @@ class BaseWorld:
         return world
 
     def add_spawn(self, entitytype, x, y, o=None, w=None, h=None):
+        """
+        :param entitytype: Spawn type
+        :param x: X pos
+        :param y: Y pos
+        :param o: Orientation char
+        :param w: Width
+        :param h: Height
+        """
         spawns = self._spawns.get(entitytype, [])
         spawns.append((x, y, util.parse_orientation(o), constants.TILE_SIZE if not w else w, constants.TILE_SIZE if not h else h))
         self._spawns[entitytype] = spawns
 
 
 class World(BaseWorld):
+    """
+    Outside world
+    """
     def __init__(self, width, height, half_block_boundaries=True):
         BaseWorld.__init__(self, width, height, half_block_boundaries)
 
@@ -526,7 +564,7 @@ class World(BaseWorld):
         self.roadmap = RoadMap(self)
 
         _BlockHelper.init_helper()
-        self._post_init()
+        self._post_init_renderer()
 
     def get_block(self, x, y, layer="terrain"):
         return BaseWorld.get_block(self, x, y, layer)
@@ -558,7 +596,7 @@ class World(BaseWorld):
                 # pixel = util.Rect(r)
                 # for a in ('x', 'y', 'width', 'height'):
                 # util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
-                #     constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
+                # constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
 
 
 class BuildingWorld(BaseWorld):
@@ -569,15 +607,21 @@ class BuildingWorld(BaseWorld):
         self._reg_layer("objects")
         self._reg_layer("rects")
 
-        self._post_init()
+        self._post_init_renderer()
 
 
 # noinspection PyShadowingNames
 class RoadMap:
+    """
+    Manages all roads/intersections
+    """
     class Road:
         _LAST_ID = 0
 
         def __init__(self, roadmap, line, road_direction, road_length, oneway=False):
+            """
+            :param line: Road line of tiles
+            """
             self.id = RoadMap.Road._LAST_ID
             RoadMap.Road._LAST_ID += 1
 
@@ -596,6 +640,9 @@ class RoadMap:
             self.set_road_length(road_length)
 
         def set_road_length(self, road_length):
+            """
+            Sets the length of the road to the given length
+            """
             self.length = road_length
             self.line = map(lambda x: tuple(x), self.line)  # tupled
             self.end_line = self.roadmap.move_line(self.line, road_length, self.road_direction)
@@ -674,6 +721,9 @@ class RoadMap:
 
     # todo: take a list of startpos, then wrap all this into a loop through them
     def begin_discovery(self, startpos):
+        """
+        Recursively finds all roads connected to the given start position
+        """
         stack = util.Stack(startpos)
         road_regions = []
         connected_roads = []
@@ -741,6 +791,9 @@ class RoadMap:
         # roads need to know about their ends, and lanes
 
     def _find_road_width(self, startpos, max_road_width=8):
+        """
+        :return: The road width at the given position
+        """
         def _recurse(world, pos, offset, current_width, max_road_width):
             tile = map(operator.add, pos, offset)
             block = world.get_block(*tile)  # guaranteed to be in range
@@ -767,15 +820,31 @@ class RoadMap:
         return min_width, width_direction, road_direction
 
     def move_line(self, line, amount, road_direction):
+        """
+        :param line: Line of tiles
+        :param amount: Amount to move
+        :param road_direction: Direction in which to move
+        :return: Moved line of tiles
+        """
         return tuple(map(lambda pos: tuple(map(operator.add, pos, (i * amount for i in road_direction))), line))
 
     def valid_road_line(self, moved_line):
+        """
+        :return: Whether the given tile line is in the world and contains all road blocks
+        """
         for tilex, tiley in moved_line:
             if not self.world.is_in_range(tilex, tiley) or self.world.get_block(tilex, tiley).blocktype != BlockType.ROAD:
                 return False
         return True
 
     def _add_fork(self, road_regions, fork_list, line, width_direction, road_direction):
+        """
+        Registers a fork
+        :param fork_list: List to add the processed fork to
+        :param line: Fork tile line
+        :param width_direction: Direction of the fork span
+        :param road_direction: Fork direction
+        """
 
         # not a valid position
         if not self.valid_road_line(line):
@@ -917,6 +986,9 @@ class RoadMap:
             print
 
     class Node:
+        """
+        Graph search node
+        """
         def __init__(self, point, node_id):
             self.point = point
             self.id = node_id
@@ -926,6 +998,9 @@ class RoadMap:
             return "Node %d" % self.id
 
     def _build_graph(self, connected_roads):
+        """
+        Builds a search graph out of all the discovered roads
+        """
         def add_edge(node, other):
             from itertools import permutations
 
@@ -1006,7 +1081,7 @@ class _BlockHelper:
             # blit and scale block sprite to tile size
             surface = pygame.Surface(constants.DIMENSION).convert_alpha()
             temp_tile = pygame.Surface((constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION), 0, tileset_surface)
-            temp_tile.blit(tileset_surface, (0, 0), rect.to_tuple())
+            temp_tile.blit(tileset_surface, (0, 0), rect.as_tuple())
 
             pygame.transform.scale(temp_tile, constants.DIMENSION, surface)
 
@@ -1041,6 +1116,9 @@ class _BlockHelper:
         return new_block
 
     def get_collision_rect(self, block):
+        """
+        :return: The collision rectangle of the given block (for custom collision box sizes)
+        """
         offset = (0, 0)
         rect = constants.DIMENSION
         blockid, rot, hor, ver = self.get_rotation(block.render_id)
@@ -1054,6 +1132,9 @@ class _BlockHelper:
         return offset, rect
 
     def get_rotation(self, block_id):
+        """
+        :return: Real block id, rotated, horizontally, vertically
+        """
         rotation = 0x01 << 29
         vertical = 0x02 << 29
         horizontal = 0x04 << 29
@@ -1073,6 +1154,9 @@ class _BlockHelper:
 
 
 class BlockType:
+    """
+    Blocktype enum
+    """
     BLANK = 0
 
     GRASS = 1
@@ -1126,6 +1210,9 @@ class BlockType:
 
     @staticmethod
     def get_type_name(blocktype):
+        """
+        Debug function for getting the name of the given blocktype
+        """
         for b in BlockType.__dict__.items():
             if b[1] == blocktype:
                 return b[0]

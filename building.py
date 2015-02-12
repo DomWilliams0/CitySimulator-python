@@ -9,6 +9,9 @@ import world as world_module
 
 class Building:
     def __init__(self, world, x, y, width, height, name):
+        """
+        :param name: World file, without .tmx
+        """
         self.world = world
         self.rect = util.Rect(x, y, width, height)
         self.doors = []
@@ -51,6 +54,10 @@ class Building:
             yield b
 
     def _closest(self, human, entering):
+        """
+        :param entering: True if entering, otherwise exiting
+        :return: The closest door spawn index
+        """
         pos = human.rect.center
         return min(enumerate(util.distance_sqrd(l[1 if entering else 0], pos) for l in self.doors), key=lambda x: x[1])[0]
 

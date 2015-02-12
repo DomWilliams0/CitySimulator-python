@@ -9,44 +9,25 @@ import event
 import util
 
 
-_KEYS = [pygame.K_w, pygame.K_a, pygame.K_s, pygame.K_d]
-_VERTICAL_KEYS = [_KEYS[0], _KEYS[2]]
-_BRAKE_KEY = pygame.K_SPACE
-_KEY_DIRECTIONS = [3, 1, 0, 2]
-
-
 class BaseController:
+    """
+    Base controller for entities, keeping track of pressed directional keys and the behaviour tree
+    """
+
     def __init__(self, the_entity):
         self.entity = the_entity
         self.wasd = OrderedDict()
 
-        for k in _KEYS:
+        for k in constants.Input.DIRECTIONAL_KEYS:
             self.wasd[k] = False
 
         self.behaviour_tree = None
         self._suppressed_behaviour = False
 
-    # self._behaviours = util.Stack()
-    #
-    # def add_behaviour(self, b):
-    # self._behaviours.push(b)
-    #
-    # def remove_current_behaviour(self):
-    # self._behaviours.pop()
-    #
-    # def set_suppressed_behaviours(self, suppress):
-    # if suppress and self._behaviours.top is not None:
-    # self.add_behaviour(None)
-    # elif not suppress and self._behaviours.top is None:
-    # self.remove_current_behaviour()
-    #
-    # def _tick_current_behaviour(self):
-    # top_exists = self._behaviours.top is not None
-    # if top_exists:
-    # self._behaviours.top.tick()
-    #     return top_exists
-
     def suppress_ai(self, suppressed):
+        """
+        :param suppressed: Should the behaviour tree be suppressed, ie is this entity being controlled from elsewhere
+        """
         self._suppressed_behaviour = suppressed
 
     def tick(self):
@@ -68,55 +49,87 @@ class BaseController:
         return False
 
     def move_in_direction(self, direction, stop=True):
+        """
+        :param direction: Simulates a keypress on the key referred to by the this direction
+        :param stop: Should the controller halt before applying this movement
+        """
         if stop:
             self.halt()
         self.handle(True, self._direction_to_key(direction))
 
     def handle(self, keydown, key):
+        """
+        Handle a key event
+        :param keydown: True if keydown, False if keyup
+        :param key: Keycode
+        """
         if key in self.wasd.keys():
             self.wasd[key] = keydown
             self._move_entity()
 
     def halt(self):
+        """
+        Releases all keys, and stops the entity
+        """
         for k in self.wasd:
             self.handle(False, k)
         self._move_entity()
 
     def on_control_start(self):
+        """
+        Called once when this entity starts to be controlled by the player
+        """
         pass
 
     def on_control_end(self):
+        """
+        Called once when this entity finishes being controlled by the player
+        """
         pass
 
     def _get_direction(self, vertical):
-        n = self._key_from_index(0 if vertical else 1)
-        p = self._key_from_index(2 if vertical else 3)
+        """
+        :param vertical: True ff north/south, False if otherwise
+        :return: 0 if 2 conflicting inputs in one direction, otherwise 1 or -1 depending on the direction
+        """
+        n = self.wasd[constants.Input.DIRECTIONAL_KEYS[constants.Direction.NORTH if vertical else constants.Direction.WEST]]
+        p = self.wasd[constants.Input.DIRECTIONAL_KEYS[constants.Direction.SOUTH if vertical else constants.Direction.EAST]]
         return 0 if n == p else -1 if n else 1
 
     def _get_speed(self):
+        """
+        :return: The current speed of the controller, which is applied to the entity's velocity
+        """
         raise NotImplementedError()
 
     def _move_entity(self):
+        """
+        Modifies the entity's velocity, depending on pressed keys
+        """
         speed = self._get_speed()
         self.entity.velocity.x = self._get_direction(False) * speed
         self.entity.velocity.y = self._get_direction(True) * speed
 
-    def _key_from_index(self, i):
-        return self.wasd[_KEYS[i]]
-
     @staticmethod
     def _key_to_direction(key):
-        if key in _VERTICAL_KEYS:
-            return constants.Direction.NORTH if key == _KEYS[0] else constants.Direction.SOUTH
-        else:
-            return constants.Direction.WEST if key == _KEYS[1] else constants.Direction.EAST
+        """
+        Converts a directional keycode to the corresponding Direction
+        """
+        return constants.Direction.VALUES[constants.Input.DIRECTIONAL_KEYS.index(key)]
 
     @staticmethod
     def _direction_to_key(direction):
-        return _KEYS[_KEY_DIRECTIONS.index(direction)]
+        """
+        Converts a Direction to the corresponding directional keycode
+        """
+        return constants.Input.DIRECTIONAL_KEYS[direction]
 
 
 class InputController:
+    """
+    Player input controller, delegates events to the camera controller and currently controlled entity's controller
+    """
+
     def __init__(self):
         self.entity = None
         self.current = None
@@ -124,9 +137,16 @@ class InputController:
         self._arrow = pygame.image.load(util.get_relative_path("sprites\misc\controller_arrow.png")).convert_alpha()
 
     def set_camera(self, camera):
+        """
+        The camera controller's camera must be set after the camera is initialised
+        """
         self._camera_controller.entity = camera
 
     def control(self, the_entity):
+        """
+        Transfers control to the given entity
+        :param the_entity: If None, returns control to the camera
+        """
         if self.current:
             self.current.suppress_ai(False)
             self.current.on_control_end()
@@ -149,14 +169,22 @@ class InputController:
             constants.SCREEN.blit(self._arrow, constants.SCREEN.camera.apply(arrow_pos))
 
     def handle_global_event(self, e):
+        """
+        Handles events that are independant of current state/control, such as pausing/quitting the game
+        :return: True if the event has been consumed, and hence should not be processed any further, otherwise False
+        """
         consumed = False
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
+        if e.type == pygame.KEYDOWN and e.key == constants.Input.QUIT:
             constants.RUNNING = False
             consumed = True
 
         return consumed
 
     def handle_event(self, e):
+        """
+        Delegates the given event
+        :param e: pygame event
+        """
         if self.handle_global_event(e):
             return
 
@@ -171,6 +199,7 @@ class InputController:
         keydown, key = se
         self.current.handle(keydown, key)
 
+        # debug keys
         try:
             if keydown:
                 if key == pygame.K_j:
@@ -195,6 +224,10 @@ class InputController:
 
 
 class GeneralEntityController(BaseController):
+    """
+    A general controller of stop-start entities, namely humans and the camera
+    """
+
     def __init__(self, the_entity, min_speed, fast_speed, max_speed_or_random):
         """
         :param max_speed_or_random: If None, then normal speed and sprint speed are set to min_speed and fast_speed respectively.
@@ -215,18 +248,23 @@ class GeneralEntityController(BaseController):
         return self.sprint_speed if self.sprint else self.speed
 
     def handle(self, keydown, key):
-        if key == pygame.K_LSHIFT:
-            self.sprint = not self.sprint
+        if key == constants.Input.BOOST:
+            self.sprint = keydown
             self._move_entity()
         else:
             BaseController.handle(self, keydown, key)
 
 
 class CameraController(GeneralEntityController):
+    """
+    The controller for the camera
+    """
+
     def __init__(self):
         GeneralEntityController.__init__(self, None, constants.Speed.CAMERA_MIN, constants.Speed.CAMERA_FAST, None)
         self._drag = VehicleController.Pedal(0.3)
         self.border_thickness = 20
+        self._was_moving = False
         self.screen_boundary = map(lambda x: x - self.border_thickness, constants.WINDOW_SIZE)
         self.entity = None
 
@@ -236,15 +274,22 @@ class CameraController(GeneralEntityController):
         self.entity.move_camera()
 
     def _mouse_border_to_direction(self, mouse_pos):
+        """
+        Returns a (x, y) direction, indicating how close to the border the mouse is
+        :param mouse_pos: Current mouse position
+        :return: A direction (eg. (5, 0)) for the camera to move if the mouse is near the border, otherwise (0, 0)
+        """
 
         def check_coord(coord, x_or_y_coord):
             """
             :return: World coordinate off the edge of the screen, for camera to target
             """
             if coord < self.border_thickness:
-                return self.border_thickness - coord
+                return coord - self.border_thickness
+                # return self.border_thickness - coord
             elif coord > self.screen_boundary[x_or_y_coord]:
-                return constants.WINDOW_SIZE[x_or_y_coord] + (self.screen_boundary[x_or_y_coord] - coord)
+                return coord - self.screen_boundary[x_or_y_coord]
+                # return constants.WINDOW_SIZE[x_or_y_coord] + (self.screen_boundary[x_or_y_coord] - coord)
             return 0
 
         dx = check_coord(mouse_pos[0], 0)
@@ -256,19 +301,22 @@ class CameraController(GeneralEntityController):
         self._drag.set_applied(True, override=True)
         BaseController.halt(self)
 
-    # def handle_event(self, e):
-    # consumed = BaseController.handle_event(self, e)
-    # if not consumed:
-    # # move camera towards mouse
-    #         # todo: shoots there way too fast
-    #         if e.type == pygame.MOUSEMOTION:
-    #             pos = self._mouse_border_to_direction(e.pos)
-    #             if pos == (0, 0):
-    #                 cam_target = None
-    #             else:
-    #                 print(pos)
-    #                 cam_target = tuple(map(operator.add, pos, self.entity.transform))
-    #             constants.SCREEN.camera.target = cam_target
+    def handle_event(self, e):
+        consumed = BaseController.handle_event(self, e)
+        if not consumed:
+            # move camera towards mouse
+            if e.type == pygame.MOUSEMOTION:
+                moved = False
+                pos = self._mouse_border_to_direction(e.pos)
+                for i in xrange(2):
+                    vertical = i == 1
+                    if pos[i] != 0:
+                        direction = constants.Direction.delta_to_direction(pos[i], vertical)
+                        self.move_in_direction(direction, stop=False)
+                        moved = True
+                if not moved and self._was_moving:
+                    self.halt()
+                self._was_moving = moved
 
     def _move_entity(self):
         speed = self._get_speed()
@@ -285,6 +333,10 @@ class CameraController(GeneralEntityController):
 
 
 class HumanController(GeneralEntityController):
+    """
+    Controller for humans, with their behaviour tree
+    """
+
     def __init__(self, the_entity):
         GeneralEntityController.__init__(self, the_entity, constants.Speed.HUMAN_MIN, constants.Speed.HUMAN_FAST, constants.Speed.HUMAN_MAX)
 
@@ -297,13 +349,24 @@ class HumanController(GeneralEntityController):
 
 
 class VehicleController(BaseController):
+    """
+    Controller for vehicles, keeping track of drift/brake/accelerating
+    """
     STOPPED = 0
     BRAKING = 1
     DRIFTING = 2
     ACCELERATING = 3
 
     class Pedal:
+        """
+        Framerate-independant application of force/braking
+        """
+
         def __init__(self, brake_time, accelerating=False):
+            """
+            :param brake_time: Seconds to apply force over
+            :param accelerating: If True, values will converge to 1, otherwise 0 (to come to a halt)
+            """
             self.brake_time = brake_time
             self._was_applied = False
             self._applied = False
@@ -319,9 +382,17 @@ class VehicleController(BaseController):
                 self._func = lambda force, division, count: force - division
 
         def is_applied(self):
+            """
+            :return: Is this pedal currently applied
+            """
             return self._applied
 
         def set_applied(self, applied, override=False):
+            """
+            :param applied: New applied status of pedal
+            :param override: If True, forces the pedal to be applied as specified by 'applied',
+                            otherwise the pedal will keep its current state if 'applied' is equal to current state
+            """
             self._was_applied = self._applied
             self._applied = applied
 
@@ -332,13 +403,18 @@ class VehicleController(BaseController):
                     self._gen = None
 
         def get_force(self):
-            force = next(self._gen, 1)
-            return force
+            """
+            :return: Float to multiply velocity by, to apply the pedals force
+            """
+            return next(self._gen, 1)
 
         def _pedal_force_gen(self, brake_time, tick_count=20):
+            """
+            :param brake_time: Seconds over which to reach final pedal force
+            :param tick_count: Number of intermediate values
+            :return: Generator for this pedal
+            """
             division = self._variation / tick_count
-            # if self.accelerating:
-            # division *= -1
 
             force = 1
             time_passed = 0
@@ -396,14 +472,14 @@ class VehicleController(BaseController):
         top = self._get_pressed_key()
 
         if vertical:
-            if top == _KEYS[2]:
+            if top == constants.Input.DIRECTIONAL_KEYS[2]:
                 return 1
-            elif top == _KEYS[0]:
+            elif top == constants.Input.DIRECTIONAL_KEYS[0]:
                 return -1
         else:
-            if top == _KEYS[3]:
+            if top == constants.Input.DIRECTIONAL_KEYS[3]:
                 return 1
-            elif top == _KEYS[1]:
+            elif top == constants.Input.DIRECTIONAL_KEYS[1]:
                 return -1
 
         return 0
@@ -414,10 +490,16 @@ class VehicleController(BaseController):
         self.__dict__[key] = value
 
     def press_pedal(self, state):
+        """
+        Applies the pedal for the given VehicleController state
+        """
         for s, pedal in self.pedals.items():
             pedal.set_applied(s == state)
 
     def _get_applied_pedal_force(self):
+        """
+        :return: The currently pressed pedal's force, None if no pedals are applied
+        """
         for p in self.pedals.values():
             if p.is_applied():
                 return p.get_force()
@@ -431,7 +513,7 @@ class VehicleController(BaseController):
         current = self._get_pressed_key()
 
         # update state
-        if current == _BRAKE_KEY:
+        if current == constants.Input.BRAKE:
             if self.state == VehicleController.ACCELERATING or self.state == VehicleController.DRIFTING:
                 self.state = VehicleController.BRAKING
 
@@ -493,10 +575,13 @@ class VehicleController(BaseController):
             BaseController._move_entity(self)
 
     def _has_virtually_stopped(self):
+        """
+        :return: If the speed is so low that it's safe to jolt to a halt
+        """
         return self.current_speed < constants.TILE_SIZE
 
     def handle(self, keydown, key):
-        if key in _KEYS:
+        if key in constants.Input.DIRECTIONAL_KEYS:
             last_top = self._keystack.top
             if keydown:
 
@@ -520,11 +605,14 @@ class VehicleController(BaseController):
             if last_top != self._keystack.top:
                 self._lasttop = last_top
         # brake
-        elif key == _BRAKE_KEY:
+        elif key == constants.Input.BRAKE:
             self.brake.set_applied(keydown)
 
     def _get_pressed_key(self):
-        return self._keystack.top if not self.brake.is_applied() else _BRAKE_KEY
+        """
+        :return: Most recently pressed key, or brake key if brake is applied
+        """
+        return self._keystack.top if not self.brake.is_applied() else constants.Input.BRAKE
 
     def halt(self):
         self.entity.velocity.zero()
@@ -537,141 +625,15 @@ class VehicleController(BaseController):
         self.press_pedal(VehicleController.DRIFTING)
 
 
-# class BaseBehaviour:
-# def __init__(self, the_entity):
-# self.entity = the_entity
-# self.controller = the_entity.controller
-#
-# def tick(self):
-# pass
-#
-# def handle(self, keydown, key):
-# self.controller.handle(keydown, key)
-#
-#
-# class RandomHumanWanderer(BaseBehaviour):
-# def __init__(self, the_entity):
-# # BaseController.__init__(self, the_entity, constants.Speed.MEDIUM if random.random() < 0.5 else constants.Speed.SLOW)
-#         BaseBehaviour.__init__(self, the_entity)
-#         self.ticker = util.TimeTicker((0.05, 0.4))
-#
-#         self.keys = {}
-#
-#     def tick(self):
-#         if self.ticker.tick():
-#             # choose random key to press
-#             if random.random() < (0.3 if len(self.keys) < 2 else 0.1):
-#                 newkey = random.choice(_KEYS)
-#                 if newkey not in self.keys:
-#                     self.keys[newkey] = random.randrange(1, 8)
-#                     self.handle(True, newkey)
-#
-#             # press/unpress all
-#             for key, time in self.keys.items():
-#                 time -= 1
-#                 release = time < 0
-#                 if release:
-#                     del self.keys[key]
-#                 else:
-#                     self.keys[key] = time
-#
-#                 self.handle(not release, key)
-#
-#                 # class SimpleVehicleFollower(BaseBehaviour):
-#                 # """
-#                 # Causes the given entity to follow the given points in order
-#                 # """
-#                 #
-#                 # class _PathFinder:
-#                 # def __init__(self, world, start_pos, *allowed_blocks):
-#                 # self.all_blocks = self._flood_find(world, start_pos, allowed_blocks)
-#                 #
-#                 # def find_path(self, goal, path_follower):
-#                 # # ah fuck, what now
-#                 # pass
-#                 #
-#                 # # noinspection PyMethodMayBeStatic
-#                 # def _flood_find(self, world, pos, allowed_blocktypes):
-#                 # stack = set()
-#                 # results = []
-#                 # allowed_blocktypes = set(allowed_blocktypes)
-#                 # stack.add(pos)
-#                 #
-#                 # while stack:
-#                 # (x, y) = stack.pop()
-#                 # block = world.get_block(x, y)
-#                 # if block.blocktype in allowed_blocktypes and (x, y) not in results:
-#                 # results.append((x, y))
-#                 # if x > 0:
-#                 # stack.add((x - 1, y))
-#                 # if x < world.tile_width - 1:
-#                 # stack.add((x + 1, y))
-#                 # if y > 0:
-#                 # stack.add((x, y - 1))
-#                 # if y < world.tile_height - 1:
-#                 # stack.add((x, y + 1))
-#                 # return results
-#                 #
-#                 # def __init__(self, vehicle):
-#                 # BaseBehaviour.__init__(self, vehicle)
-#                 # assert isinstance(vehicle, entity.Vehicle)
-#                 #
-#                 # self.points = []
-#                 #
-#                 # # finder = _PathFinder(the_entity.world, util.pixel_to_tile(the_entity.rect.center), (23, 6), world.BlockType.PAVEMENT_C)
-#                 #         # debug test
-#                 #         self.add_point(5, 8)
-#                 #         self.add_point(33, 8)
-#                 #         self.add_point(36, 28)
-#                 #
-#                 #         self.current_goal = self._next_point()
-#                 #         self.following = True
-#                 #
-#                 #     def add_point(self, tilex, tiley):
-#                 #         """
-#                 #         Appends the given point to the end of the path
-#                 #         """
-#                 #         self.points.append((tilex * constants.TILE_SIZE, tiley * constants.TILE_SIZE))
-#                 #
-#                 #     def _next_point(self):
-#                 #         try:
-#                 #             p = self.points.pop(0)
-#                 #         except IndexError:
-#                 #             p = None
-#                 #         return p
-#                 #
-#                 #     def tick(self):
-#                 #         pos = self.entity.rect.center
-#                 #
-#                 #         # debug draw nodes
-#                 #         for p in self.points:
-#                 #             constants.SCREEN.draw_circle(p)
-#                 #
-#                 #         if not self.following:
-#                 #             return
-#                 #
-#                 #         # drive towards
-#                 #         if not self._reached_goal(pos):
-#                 #             direction = Vec2d(self.current_goal[0] - pos[0], self.current_goal[1] - pos[1])
-#                 #             angle = direction.get_angle()
-#                 #             halfangle = util.round_to_multiple(angle, 45)
-#                 #
-#                 #         else:
-#                 #             self.controller.halt()
-#                 #             self.current_goal = self._next_point()
-#                 #             if not self.current_goal:  # complete
-#                 #                 self.following = False
-#                 #
-#                 #         if self.current_goal:
-#                 #             constants.SCREEN.draw_line(pos, self.current_goal)
-#                 #
-#                 #     def _reached_goal(self, pos):
-#                 #         return util.distance_sqrd(pos, self.current_goal) < constants.TILE_SIZE_SQRD * 2
-
-
 # behaviour tree goodness
 class BehaviourTree:
+    """
+    Behaviour tree, containing a hierarchy of behaviours
+    """
     def __init__(self, entity_controller, tree):
+        """
+        :param tree: Root task
+        """
         self.root = None
         self.current = None
         # self.data_context = {}
@@ -696,36 +658,55 @@ class BehaviourTree:
 
 
 class Task:
+    """
+    Base task
+    """
     RUNNING = 0
     FAILURE = 1
     SUCCESS = 2
 
     def __init__(self, *children):
+        """
+        :param children: All child nodes
+        """
         # self.data_context = data_context
         self.children_tasks = list(children)
 
     def init(self):
+        """
+        Called once on start
+        """
         pass
 
     def end(self):
+        """
+        Called once on end
+        """
         pass
 
     def process(self):
-        # returns its new state?
+        """
+        Called every frame that it is active
+        :return: New state
+        """
         pass
 
 
 class LeafTask(Task):
+    """
+    Childless task, that executes an action
+    """
     def __init__(self):
-        # leaves have no children
+        """
+        Leaves have no children
+        """
         Task.__init__(self)
 
 
-# nodes have multiple children
-# leaves have no children; None children list?
-
-
 class Composite(Task):
+    """
+    Task that holds several child tasks
+    """
     def __init__(self, *children):
         Task.__init__(self, *children)
         self.children_stack = util.Stack()
@@ -745,6 +726,9 @@ class Composite(Task):
 
 
 class Sequence(Composite):
+    """
+    Executes each child in order: if one of them fails, then returns failure
+    """
     def process(self):
         state = self._process_current()
 
@@ -768,6 +752,9 @@ class Sequence(Composite):
 
 
 class Selector(Composite):
+    """
+    Returns a success if any children succeed, and doesn't execute any further children
+    """
     def process(self):
         state = self._process_current()
 
@@ -788,6 +775,9 @@ class Selector(Composite):
 
 
 class Decorator(Task):
+    """
+    Task decorator with a single child task
+    """
     def __init__(self, child):
         Task.__init__(self)
         self.child = child
@@ -802,6 +792,9 @@ class Decorator(Task):
 
 
 class Inverter(Decorator):
+    """
+    Inverts the result of child task
+    """
     def process(self):
         state = self.child.process()
 
@@ -818,6 +811,9 @@ class Inverter(Decorator):
 
 
 class Succeeder(Decorator):
+    """
+    Always returns success, even if the child task fails
+    """
     def process(self):
         state = self.child.process()
 
@@ -831,7 +827,13 @@ class Succeeder(Decorator):
 
 
 class Repeater(Decorator):
+    """
+    Repeats the child task
+    """
     def __init__(self, child, repeat_times=-1):
+        """
+        :param repeat_times: Child task will be repeated this amount of times: if negative, infinite repetition
+        """
         Decorator.__init__(self, child)
         self.repeat_times = repeat_times
 
@@ -856,6 +858,9 @@ class Repeater(Decorator):
 
 
 class RepeatUntilFail(Decorator):
+    """
+    Repeats the child task until it fails
+    """
     def process(self):
         state = self.child.process()
 
@@ -871,17 +876,29 @@ class RepeatUntilFail(Decorator):
 
 # leaf tasks/actions
 class EntityLeafTask(LeafTask):
+    """
+    Helper leaf task involving an entity and its controller
+    """
     def __init__(self, entity_controller):
         LeafTask.__init__(self)
         self.entity = entity_controller.entity
         self.controller = entity_controller
 
     def _bool_to_condition(self, b):
+        """
+        :return: Success if b is True, otherwise failure
+        """
         return Task.SUCCESS if b else Task.FAILURE
 
 
 class EntityMoveToLocation(EntityLeafTask):
+    """
+    Moves the child entity to the given location
+    """
     def __init__(self, controller, target_location):
+        """
+        :param target_location: Target tile location
+        """
         EntityLeafTask.__init__(self, controller)
         self.target_location = util.tile_to_pixel(target_location)
         self._size = self.entity.aabb.width
@@ -907,6 +924,9 @@ class EntityMoveToLocation(EntityLeafTask):
 
 
 class EntityWander(EntityLeafTask):
+    """
+    Wanders randomly, turning away from walls if encountered
+    """
     def __init__(self, entity_controller):
         EntityLeafTask.__init__(self, entity_controller)
         self.ticker = util.TimeTicker((0.1, 0.8))
@@ -934,11 +954,17 @@ class EntityWander(EntityLeafTask):
 
 
 class NoObstacle(EntityLeafTask):
+    """
+    Checks for a solid block in front of the entity
+    """
     def process(self):
         return self._bool_to_condition(not self.entity.world.is_direction_blocked(self.entity.get_current_tile(), self.entity.direction))
 
 
 class DebugPrint(LeafTask):
+    """
+    Prints a debug message to the console, then immediately succeeds
+    """
     def __init__(self, msg):
         LeafTask.__init__(self)
         self.msg = msg

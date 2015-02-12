@@ -57,6 +57,9 @@ class GameScreen:
         self._window.blit(sprite, self.camera.apply_rect(loc))
 
     def draw_block(self, block, loc, surface=None):
+        """
+        Draws a block to the given loc on the given surface (the window if None)
+        """
         image = world_module.Block.HELPER.block_images[block.render_id]
         s = surface if surface else self._window
         s.blit(image, loc)
@@ -75,6 +78,9 @@ class GameScreen:
         pygame.draw.circle(self._window, colour, camera_apply, radius, 0 if filled else 2)
 
     def draw_circle_in_tile(self, pos, colour=(0, 255, 100), radius=10, filled=True):
+        """
+        Centres the circle in the given tile position
+        """
         self.draw_circle((pos[0] + TILE_SIZE / 2, pos[1] + TILE_SIZE / 2), colour, radius, filled)
 
     def draw_fps(self, fps, offset=20):
@@ -84,6 +90,10 @@ class GameScreen:
         self.draw_string(str(int(fps)), (offset, WINDOW_SIZE[1] - offset))
 
     def draw_string(self, string, pos, colour=(255, 0, 0), absolute=True):
+        """
+        Draws the given string to the screen
+        :param absolute: If False, it is drawn in the world, otherwise on the screen
+        """
         surface = self.font.render(string, 1, colour)
         self._window.blit(surface, self.camera.apply(pos) if not absolute else pos)
 
@@ -135,14 +145,23 @@ class Camera:
         self.move_camera()
 
     def _update_target_position(self):
+        """
+        Updates target position to the currently tracked entity's position
+        """
         if self._target_entity:
             self._target_position = self._target_entity.transform.as_tuple()
 
     def move_camera(self):
+        """
+        Called per frame, and updates the camera's position
+        """
         self.transform += self.velocity * DELTA
         self._check_boundaries()
 
     def _check_boundaries(self):
+        """
+        Makes sure the camera does not move outside of the world's boundaries
+        """
         self.transform.x = max(self.boundaries[0], self.transform.x)
         self.transform.y = max(self.boundaries[1], self.transform.y)
         self.transform.x = min(self.boundaries[2], self.transform.x)
@@ -165,6 +184,9 @@ class Camera:
         self._check_boundaries()
 
     def _direction_to_target(self, pos):
+        """
+        :return: Vector from centre to given position
+        """
         camera_centre = Vec2d(self.transform.x + self.view_size[0] / 2, self.transform.y + self.view_size[1] / 2)
         target_centre = Vec2d(pos)
         return target_centre - camera_centre
@@ -181,9 +203,15 @@ class Camera:
         return self.apply(rect)
 
     def apply(self, tup):
+        """
+        :return: Point with camera offset applied
+        """
         return tup[0] - self.transform.x, tup[1] - self.transform.y
 
     def update_boundaries(self, world):
+        """
+        Updates the boundaries to that of the given world
+        """
         self.world = world
         self.world_dimensions = (self.world.pixel_width, self.world.pixel_height)
         self.boundaries = [0, 0,
@@ -228,28 +256,40 @@ class Speed:
 
 
 class Direction:
-    SOUTH = 0
+    NORTH = 0
     WEST = 1
-    EAST = 2
-    NORTH = 3
+    SOUTH = 2
+    EAST = 3
 
-    VALUES = [SOUTH, WEST, EAST, NORTH]
-    HORIZONTALS = [WEST, EAST]
-    VERTICALS = [SOUTH, NORTH]
+    VALUES = [NORTH, WEST, SOUTH, EAST]
+    HORIZONTALS = [EAST, WEST]
+    VERTICALS = [NORTH, SOUTH]
 
     @staticmethod
     def random():
+        """
+        :return: Random direction
+        """
         return random.choice(Direction.VALUES)
 
     @staticmethod
     def opposite(direction):
-        if direction in Direction.HORIZONTALS:
-            return Direction.EAST if direction == Direction.WEST else Direction.WEST
-        else:
-            return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
+        """
+        :return: Opposite of given direction
+        """
+        return (direction + 2) % 4
+        # if direction in Direction.HORIZONTALS:
+        # return Direction.EAST if direction == Direction.WEST else Direction.WEST
+        # else:
+        #     return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
 
     @staticmethod
     def delta_to_direction(delta, vertical):
+        """
+        :param delta: integer
+        :param vertical: True if in y axis, otherwise False
+        :return:
+        """
         if vertical:
             return Direction.SOUTH if delta > 0 else Direction.NORTH
         else:
@@ -263,11 +303,29 @@ class EntityType:
 
     @staticmethod
     def parse_string(s):
+        """
+        :return: EntityType referred to by given string
+        """
         s = s.upper()
         for prop, val in EntityType.__dict__.items():
             if s == prop and isinstance(val, int):
                 return val
         return EntityType.ALL
+
+
+class Input:
+    UP = pygame.K_w
+    LEFT = pygame.K_a
+    DOWN = pygame.K_s
+    RIGHT = pygame.K_d
+    BOOST = pygame.K_LSHIFT
+
+    BRAKE = pygame.K_SPACE
+
+    RELEASE_CONTROL = pygame.K_TAB
+    QUIT = pygame.K_ESCAPE
+
+    DIRECTIONAL_KEYS = [UP, LEFT, DOWN, RIGHT]
 
 
 STATEMANAGER = None
