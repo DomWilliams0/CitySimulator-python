@@ -1,6 +1,7 @@
 import os
 import random
 import operator
+import re
 
 from pygame.rect import Rect as pygame_Rect
 
@@ -13,10 +14,10 @@ _SURROUNDING_OFFSETS = (0, -1), (-1, 0), (1, 0), (0, 1)
 
 def get_relative_path(path):
     """
-    :param path: Relative path in resources dir, separated by /
+    :param path: Relative path in resources dir, separated by / or \
     :return: Absolute path to resource
     """
-    split = path.split(os.sep)
+    split = re.split(r"[\\//]", path)
     return os.path.join(os.path.dirname(__file__), "res", *split)
 
 
