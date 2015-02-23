@@ -158,6 +158,10 @@ class Camera:
         self.transform += self.velocity * DELTA
         self._check_boundaries()
 
+    def is_visible(self, position):
+        return self.transform.x <= position[0] < self.transform.x + self.view_size[0] and \
+               self.transform.y <= position[1] < self.transform.y + self.view_size[1]
+
     def _check_boundaries(self):
         """
         Makes sure the camera does not move outside of the world's boundaries
@@ -281,7 +285,7 @@ class Direction:
         # if direction in Direction.HORIZONTALS:
         # return Direction.EAST if direction == Direction.WEST else Direction.WEST
         # else:
-        #     return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
+        # return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
 
     @staticmethod
     def delta_to_direction(delta, vertical):
@@ -332,7 +336,6 @@ STATEMANAGER = None
 RUNNING = True
 SCREEN = GameScreen()
 DELTA = 0
-FPS = 0
 WINDOW_SIZE = (640, 640)
 WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
 
@@ -340,3 +343,4 @@ TILESET_RESOLUTION = 16
 TILE_SIZE = 32
 DIMENSION = (TILE_SIZE, TILE_SIZE)
 TILE_SIZE_SQRD = TILE_SIZE ** 2
+HALF_TILE_SIZE = TILE_SIZE / 2, TILE_SIZE / 2

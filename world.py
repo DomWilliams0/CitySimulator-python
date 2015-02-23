@@ -95,6 +95,51 @@ class WorldRenderer:
                     return rl
 
 
+class EntityGrid:
+    """
+    A grid of sets that hold the entities in those cells
+    """
+
+    def __init__(self, the_world, cell_size):
+        """
+        :param the_world: The world
+        :param cell_size: The pixel size of each cell
+        """
+        width = the_world.pixel_width / cell_size
+        height = the_world.pixel_height / cell_size
+
+        self.cell_size = cell_size
+        self.grid = [[set() for _ in xrange(width)] for _ in xrange(height)]
+        self._last_positions = {}
+
+    def move(self, entity):
+        """
+        Updates the grid_cell of the given entity
+        """
+        # move out of old position
+        old_pos = self._last_positions.get(entity)
+        if old_pos:
+            s = self.grid[old_pos]
+            s.remove(entity)
+
+        new_pos = (map(lambda x: util.round_down_to_multiple(x, self.cell_size) / self.cell_size, entity.transform))
+        cell = self.grid[new_pos[1]][new_pos[0]]
+        cell.add(entity)
+        entity.grid_cell = cell
+
+    def iterate_entities(self):
+        """
+        Iterates all entity pairs in the grid
+        :return: (entity, other)
+        """
+        for row in self.grid:
+            for s in row:
+                for e in s:
+                    for o in s:
+                        if o.id < e.id:
+                            yield e, o
+
+
 class BaseWorld:
     def __init__(self, width, height, half_block_boundaries=True):
         """
@@ -108,6 +153,7 @@ class BaseWorld:
         self.layers = OrderedDict()
         self.interact_rects = []
 
+        self.entity_grid = EntityGrid(self, constants.TILE_SIZE)
         self.entities = []
         self.entity_buffer = {}
         self._spawns = {}
@@ -231,36 +277,15 @@ class BaseWorld:
         Ticks all entities
         :param boundaries Only render those in the given boundaries (format: x1, y1, x2, y2)
         """
-        swapsies = []
-        # swap entities for layering
-        # debug very intensive, need to find a better way to detect entity collisions, quadtrees?
-        # todo only those that are on screen
-        for i, entity in enumerate(self.entities):
-            for j, other in enumerate(self.entities):
-                # todo are they visible on the screen?
-                if i == j or entity.id < other.id:
-                    continue
-
-                distance = (entity.rect.x - other.rect.x) ** 2 + (entity.rect.y - other.rect.y) ** 2
-                if distance > entity.rect.width ** 2 or distance > entity.rect.height ** 2:
-                    continue
-
-                # walking south and over
-                if (i < j and entity.rect.bottomleft[1] > other.rect.bottomleft[1]) or (i > j and entity.rect.bottomleft[1] < other.rect.bottomleft[1]):
-                    swapsies.append((entity, i, other, j))
-        if swapsies:
-            for e, i, o, j in swapsies:
-                temp = self.entities[i]
-                self.entities[i] = self.entities[j]
-                self.entities[j] = temp
-
-        # draw entitiesa
+        # draw entities
         for e in self.entities:
             if e.dead:
-                # todo GET THAT BODY OUT OF HERE
-                pass
+                self._transfer_to_buffer(e, self, None)
+                if constants.STATEMANAGER.controller.entity == self:
+                    constants.STATEMANAGER.transfer_control(None)
             else:
-                e.tick(render)  # todo only render on screen, maybe add function to entity to find if on screen? passing in camera coords
+                self.entity_grid.move(e)
+                e.tick(render and e.is_visible(boundaries))
 
         # flush buffer
         for e, v in self.entity_buffer.items():
@@ -551,6 +576,7 @@ class World(BaseWorld):
     """
     Outside world
     """
+
     def __init__(self, width, height, half_block_boundaries=True):
         BaseWorld.__init__(self, width, height, half_block_boundaries)
 
@@ -615,6 +641,7 @@ class RoadMap:
     """
     Manages all roads/intersections
     """
+
     class Road:
         _LAST_ID = 0
 
@@ -794,6 +821,7 @@ class RoadMap:
         """
         :return: The road width at the given position
         """
+
         def _recurse(world, pos, offset, current_width, max_road_width):
             tile = map(operator.add, pos, offset)
             block = world.get_block(*tile)  # guaranteed to be in range
@@ -989,6 +1017,7 @@ class RoadMap:
         """
         Graph search node
         """
+
         def __init__(self, point, node_id):
             self.point = point
             self.id = node_id
@@ -1001,6 +1030,7 @@ class RoadMap:
         """
         Builds a search graph out of all the discovered roads
         """
+
         def add_edge(node, other):
             from itertools import permutations
 

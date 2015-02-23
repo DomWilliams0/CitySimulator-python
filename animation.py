@@ -9,6 +9,10 @@ import constants
 import util
 
 
+HUMAN_DIMENSION = (32, 32)
+VEHICLE_DIMENSION = (64, 32)
+
+
 def clone(sheet):
     """
     Clones the given spritesheet (and all frame surfaces of all sequences)
@@ -141,10 +145,10 @@ def load_all():
 
             # humans
             if d == "humans":
-                HumanSpriteSheet(path, (128, 128), (32, 32), 4)
+                HumanSpriteSheet(path, (128, 128), HUMAN_DIMENSION, 4)
 
             if d == "vehicles":
-                VehicleSpriteSheet(path, (128, 128), (32, 32), (64, 32), 4)
+                VehicleSpriteSheet(path, (128, 128), HUMAN_DIMENSION, VEHICLE_DIMENSION, 4)
     logging.info("Loaded %d sprites" % len(BaseSpriteSheet.LOADED))
 
 
@@ -278,6 +282,7 @@ class VehicleAnimator(HumanAnimator):
     """
     Animator for vehicles
     """
+
     def __init__(self, entity, spritesheet):
         HumanAnimator.__init__(self, entity, spritesheet)
         self.was_horizontal = self._is_horizontal(entity.direction)

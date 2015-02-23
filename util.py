@@ -1,3 +1,4 @@
+from math import floor
 import os
 import random
 import operator
@@ -52,6 +53,13 @@ def round_to_multiple(x, multiple):
     :return: x rounded to the nearest multiple of 'multiple'
     """
     return int(multiple * round(float(x) / multiple))
+
+
+def round_down_to_multiple(x, multiple):
+    """
+    :return: x rounded down to the nearest multiple of 'multiple'
+    """
+    return int(multiple * floor((float(x) / multiple)))
 
 
 def pixel_to_tile(pos):
@@ -183,6 +191,7 @@ class Rect:
     """
     Rectangle that supports floating point numbers
     """
+
     def __init__(self, *args):
         """
         :param args: ((x, y), (w, h)) or (x, y, w, h) or another Rect
@@ -288,6 +297,7 @@ class Stack:
     """
     Stack that makes keeping track of top element easy
     """
+
     def __init__(self, *initvalues):
         self._data = []
         self.top = None
@@ -348,6 +358,7 @@ class TimeTicker:
     """
     Ticks independantly of framerate
     """
+
     def __init__(self, limit_or_range_range):
         """
         :param limit_or_range_range: Either constant seconds, or a (min, max) range for random times
@@ -389,6 +400,7 @@ class Transform:
     """
     Simple x, y coordinate container
     """
+
     def __init__(self):
         self.x = 0.0
         self.y = 0.0
@@ -413,6 +425,9 @@ class Transform:
     def __iter__(self):
         yield self.x
         yield self.y
+
+    def __getitem__(self, item):
+        return (self.x, self.y)[item]
 
     def __repr__(self):
         return "Transform(%d, %d)" % (self.x, self.y)

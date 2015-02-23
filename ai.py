@@ -372,14 +372,16 @@ class VehicleController(BaseController):
             self._applied = False
             self._gen = None
             self.accelerating = accelerating
+            self._backup = None
             if accelerating:
                 self._default_force = 1
-                self._variation = 0.9
-                self._func = lambda force, division, count: max(1, 0.9 + (1 / ((count + 1) / 2.0)))
+                self._variation = 1
+                self._func = lambda force, division, count: max(1, self._variation + (1 / ((count + 1) / 2.0)))
             else:
                 self._default_force = 0
                 self._variation = 0.2
                 self._func = lambda force, division, count: force - division
+            self.current_force = 1
 
         def is_applied(self):
             """
@@ -387,7 +389,7 @@ class VehicleController(BaseController):
             """
             return self._applied
 
-        def set_applied(self, applied, override=False):
+        def set_applied(self, applied, override=False, use_backup=False):
             """
             :param applied: New applied status of pedal
             :param override: If True, forces the pedal to be applied as specified by 'applied',
@@ -397,14 +399,27 @@ class VehicleController(BaseController):
             self._applied = applied
 
             if applied != self._was_applied or override:
+                # if use_backup:
+                # self._gen = self._backup
+
                 if applied:
+                    last_force = self.current_force
+
                     self._gen = self._pedal_force_gen(self.brake_time)
+
+                    if use_backup:
+                        while self.current_force <= last_force:
+                            self.get_force()
                 else:
+                    self._backup = self._gen
                     self._gen = None
+
+                if not use_backup:
+                    self.current_force = 1
 
         def get_force(self):
             """
-            :return: Float to multiply velocity by, to apply the pedals force
+            :return: Float to multiply velocity by, to apply the pedal's force
             """
             return next(self._gen, 1)
 
@@ -416,7 +431,6 @@ class VehicleController(BaseController):
             """
             division = self._variation / tick_count
 
-            force = 1
             time_passed = 0
             step = float(brake_time) / tick_count
             next_step = 0
@@ -427,8 +441,8 @@ class VehicleController(BaseController):
                 if time_passed >= next_step:
                     count += 1
                     next_step += step
-                    force = self._func(force, division, count)
-                    yield force
+                    self.current_force = self._func(self.current_force, division, count)
+                    yield self.current_force
                 else:
                     yield 1
 
@@ -436,7 +450,6 @@ class VehicleController(BaseController):
 
     def __init__(self, vehicle):
         BaseController.__init__(self, vehicle)
-        # self.add_behaviour(SimpleVehicleFollower(vehicle))
         # todo: add new sub-behaviour to go towards a target, then use for path follower
         # todo also base human movement on vehicle, instead of setting velocity directly
 
@@ -449,14 +462,16 @@ class VehicleController(BaseController):
         self.pedals = {VehicleController.BRAKING: self.brake, VehicleController.DRIFTING: self.drift_brake,
                        VehicleController.ACCELERATING: self.accelerator}
 
+        self._brake_key_pressed = False
         self.current_speed = 0
         self.acceleration = 1.03
         self.max_speed = constants.Speed.VEHICLE_MAX * random.uniform(0.75, 1)
-        self.last_pos = self.entity.aabb.topleft
+        self.start_speed = constants.Speed.VEHICLE_MIN / 10
 
         self.state = VehicleController.STOPPED
-        self.last_directions = [0, 0]
+        self.last_key = None
         self.last_state = self.state
+        self.last_directions = [0, 0]
 
     def _get_speed(self):
         return self.current_speed
@@ -484,17 +499,17 @@ class VehicleController(BaseController):
 
         return 0
 
-    def __setattr__(self, key, value):
-        if key == "state" and value != VehicleController.STOPPED:
-            self.press_pedal(value)
-        self.__dict__[key] = value
+    # def __setattr__(self, key, value):
+    # if key == "state" and value != VehicleController.STOPPED:
+    # self.press_pedal(value)
+    #     self.__dict__[key] = value
 
-    def press_pedal(self, state):
+    def press_pedal(self, state, use_backup_gen=False):
         """
         Applies the pedal for the given VehicleController state
         """
         for s, pedal in self.pedals.items():
-            pedal.set_applied(s == state)
+            pedal.set_applied(s == state, use_backup=use_backup_gen)
 
     def _get_applied_pedal_force(self):
         """
@@ -509,27 +524,40 @@ class VehicleController(BaseController):
         # todo: only change direction to opposite if stopped, otherwise brake
         BaseController.tick(self)
 
-        # None if no key, brake_key if brake is held down
+        # None if no key, BRAKE if brake is held down
         current = self._get_pressed_key()
+        stop_accelerator_abuse = False
 
-        # update state
+        # braking while moving
         if current == constants.Input.BRAKE:
             if self.state == VehicleController.ACCELERATING or self.state == VehicleController.DRIFTING:
                 self.state = VehicleController.BRAKING
 
+        # key released while accelerating
         elif current is None:
             if self.state == VehicleController.ACCELERATING:
                 self.state = VehicleController.DRIFTING
 
+        # directional key is pressed
         else:
             self.state = VehicleController.ACCELERATING
 
-        if self.state == VehicleController.ACCELERATING:
-            if self.current_speed == 0:
-                self.current_speed = constants.TILE_SIZE
+            # first pressed accelerating
+            if self.current_speed == 0 and not self._brake_key_pressed:
+                self.current_speed = self.start_speed
 
+            elif self.last_state != self.state:
+                stop_accelerator_abuse = True
+
+            # todo slow on turning?
+            if self.last_key != current and self.current_speed > self.start_speed:
+                # self.current_speed *= 0.8
+                # self.accelerator.set_applied(True, True)
+                pass
+
+        # apply pedal force if moving
         if self.state != VehicleController.STOPPED:
-            self.press_pedal(self.state)
+            self.press_pedal(self.state, stop_accelerator_abuse)
             force = self._get_applied_pedal_force()
             if force is not None:
                 self.current_speed *= force
@@ -539,9 +567,8 @@ class VehicleController(BaseController):
                 self.current_speed = self.max_speed
 
         self._move_entity()
-        self.last_pos = self.entity.aabb.topleft
-        self.last_directions[0], self.last_directions[1] = self._get_direction(False), self._get_direction(True)
-
+        self.last_directions = self._get_direction(False), self._get_direction(True)
+        self.last_key = current
         self.last_state = self.state
 
         """
@@ -585,34 +612,34 @@ class VehicleController(BaseController):
             last_top = self._keystack.top
             if keydown:
 
-                # todo: is this necessary? a car can turn around quickly enough to make this restriction redundant
-                # register = True
-                # if self.state != VehicleController.STOPPED:
-                # current_direction = self.entity.direction
-                # key_press_direction = self._key_to_direction(key)
-                # key_opposite = constants.Direction.opposite(key_press_direction)
-                #
-                # if key_opposite == current_direction:
-                # register = False
-                #
-                # if register:
-                # self._keystack.push(key)
-                if key != last_top:
+                # prevents a car switching direction to its opposite
+                register = True
+                if self.state != VehicleController.STOPPED:
+                    current_direction = self.entity.direction
+                    key_press_direction = self._key_to_direction(key)
+                    key_opposite = constants.Direction.opposite(key_press_direction)
+
+                    if key_opposite == current_direction:
+                        register = False
+
+                if register and key != last_top:
                     self._keystack.push(key)
             else:
                 self._keystack.remove_item(key)
 
             if last_top != self._keystack.top:
                 self._lasttop = last_top
+
         # brake
         elif key == constants.Input.BRAKE:
             self.brake.set_applied(keydown)
+            self._brake_key_pressed = keydown
 
     def _get_pressed_key(self):
         """
         :return: Most recently pressed key, or brake key if brake is applied
         """
-        return self._keystack.top if not self.brake.is_applied() else constants.Input.BRAKE
+        return self._keystack.top if not self._brake_key_pressed else constants.Input.BRAKE
 
     def halt(self):
         self.entity.velocity.zero()
@@ -630,6 +657,7 @@ class BehaviourTree:
     """
     Behaviour tree, containing a hierarchy of behaviours
     """
+
     def __init__(self, entity_controller, tree):
         """
         :param tree: Root task
@@ -642,7 +670,7 @@ class BehaviourTree:
         # debug example
         # sequence = Sequence(self.data_context,
         # EntityMoveToLocation(entity_controller, (36, 7)),
-        #                     DebugPrint())
+        # DebugPrint())
         #
         # self.root = Repeater(sequence, self.data_context)
 
@@ -696,6 +724,7 @@ class LeafTask(Task):
     """
     Childless task, that executes an action
     """
+
     def __init__(self):
         """
         Leaves have no children
@@ -707,6 +736,7 @@ class Composite(Task):
     """
     Task that holds several child tasks
     """
+
     def __init__(self, *children):
         Task.__init__(self, *children)
         self.children_stack = util.Stack()
@@ -729,6 +759,7 @@ class Sequence(Composite):
     """
     Executes each child in order: if one of them fails, then returns failure
     """
+
     def process(self):
         state = self._process_current()
 
@@ -755,6 +786,7 @@ class Selector(Composite):
     """
     Returns a success if any children succeed, and doesn't execute any further children
     """
+
     def process(self):
         state = self._process_current()
 
@@ -778,6 +810,7 @@ class Decorator(Task):
     """
     Task decorator with a single child task
     """
+
     def __init__(self, child):
         Task.__init__(self)
         self.child = child
@@ -795,6 +828,7 @@ class Inverter(Decorator):
     """
     Inverts the result of child task
     """
+
     def process(self):
         state = self.child.process()
 
@@ -814,6 +848,7 @@ class Succeeder(Decorator):
     """
     Always returns success, even if the child task fails
     """
+
     def process(self):
         state = self.child.process()
 
@@ -830,6 +865,7 @@ class Repeater(Decorator):
     """
     Repeats the child task
     """
+
     def __init__(self, child, repeat_times=-1):
         """
         :param repeat_times: Child task will be repeated this amount of times: if negative, infinite repetition
@@ -861,6 +897,7 @@ class RepeatUntilFail(Decorator):
     """
     Repeats the child task until it fails
     """
+
     def process(self):
         state = self.child.process()
 
@@ -879,6 +916,7 @@ class EntityLeafTask(LeafTask):
     """
     Helper leaf task involving an entity and its controller
     """
+
     def __init__(self, entity_controller):
         LeafTask.__init__(self)
         self.entity = entity_controller.entity
@@ -895,6 +933,7 @@ class EntityMoveToLocation(EntityLeafTask):
     """
     Moves the child entity to the given location
     """
+
     def __init__(self, controller, target_location):
         """
         :param target_location: Target tile location
@@ -927,6 +966,7 @@ class EntityWander(EntityLeafTask):
     """
     Wanders randomly, turning away from walls if encountered
     """
+
     def __init__(self, entity_controller):
         EntityLeafTask.__init__(self, entity_controller)
         self.ticker = util.TimeTicker((0.1, 0.8))
@@ -957,6 +997,7 @@ class NoObstacle(EntityLeafTask):
     """
     Checks for a solid block in front of the entity
     """
+
     def process(self):
         return self._bool_to_condition(not self.entity.world.is_direction_blocked(self.entity.get_current_tile(), self.entity.direction))
 
@@ -965,6 +1006,7 @@ class DebugPrint(LeafTask):
     """
     Prints a debug message to the console, then immediately succeeds
     """
+
     def __init__(self, msg):
         LeafTask.__init__(self)
         self.msg = msg

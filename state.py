@@ -242,7 +242,7 @@ class BaseGameState(State):
             closest = None
             closest_distance = sys.maxsize
             for entity in self.world.entities:
-                dist = util.distance_sqrd(entity.transform.as_tuple(), world_pos)
+                dist = util.distance_sqrd(entity.transform, world_pos)
                 if dist < constants.TILE_SIZE_SQRD and dist < closest_distance:
                     closest_distance = dist
                     closest = entity
@@ -281,7 +281,7 @@ class OutsideWorldState(BaseGameState):
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(4):
+        for _ in xrange(20):
             Human(self.world)
 
         # add some vehicles
@@ -289,7 +289,7 @@ class OutsideWorldState(BaseGameState):
             Vehicle(self.world)
 
         # centre on a random entity
-        constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform.as_tuple())
+        constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform)
 
         # move mouse to centre
         pygame.mouse.set_pos(constants.WINDOW_CENTRE)

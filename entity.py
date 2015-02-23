@@ -15,7 +15,6 @@ class Entity(Sprite):
     """
     A Sprite with an image, position, velocity and aabb
     """
-
     _LASTID = 0
 
     def __init__(self, dimensions, world, entitytype, spritesheet=None, clone_spritesheet=False, loc=None, world_collisions=True, world_interactions=False, can_leave_world=False):
@@ -34,6 +33,7 @@ class Entity(Sprite):
         self.transform = util.Transform()
 
         self.world = world
+        self.grid_cell = None
         world.spawn_entity(self, loc)
 
         self.velocity = Vec2d(0, 0)
@@ -186,7 +186,72 @@ class Entity(Sprite):
         """
         :return: The current tile position
         """
-        return util.pixel_to_tile(self.transform.as_tuple())
+        return util.pixel_to_tile(self.transform)
+
+    def is_visible(self, boundaries):
+        tile = self.get_current_tile()
+        return boundaries[0] <= tile[0] <= boundaries[2] and boundaries[1] <= tile[1] <= boundaries[3]
+
+    def _resolve_collision(self, other):
+        etype = other.entitytype
+        if etype == constants.EntityType.HUMAN:
+            f = self.resolve_human_collision
+        elif etype == constants.EntityType.VEHICLE:
+            f = self.resolve_vehicle_collision
+        else:
+            f = None
+
+        if f:
+            f(other)
+
+    def resolve_vehicle_collision(self, vehicle):
+        self.swap_render_order(vehicle)
+
+    def resolve_human_collision(self, human):
+        self.swap_render_order(human)
+
+    def resolve_world_collision(self, block_rect):
+        r = block_rect[0]  # strip the dimensions
+        if block_rect[1] != constants.DIMENSION:
+            half_tile = block_rect[1][0] / 2, block_rect[1][1] / 2
+        else:
+            half_tile = constants.HALF_TILE_SIZE
+
+        # resolve collision
+        center_a = self.aabb.center
+        center_b = (r[0] + half_tile[0], r[1] + half_tile[1])
+        distance_x = center_a[0] - center_b[0]
+        distance_y = center_a[1] - center_b[1]
+        min_x = self.aabb.width / 2 + half_tile[0]
+        min_y = self.aabb.height / 2 + half_tile[1]
+        if distance_x > 0:
+            x_overlap = min_x - distance_x
+        else:
+            x_overlap = -min_x - distance_x
+        if distance_y > 0:
+            y_overlap = min_y - distance_y
+        else:
+            y_overlap = -min_y - distance_y
+        if abs(y_overlap) < abs(x_overlap):
+            self.aabb.y += y_overlap
+        else:
+            self.aabb.x += x_overlap
+
+    def swap_render_order(self, other):
+        """
+        Attempts to swap the two entities if they're the wrong way round
+        """
+        if other.id < self.id:
+            distance = util.distance_sqrd(self.transform, other.transform)
+            if distance < constants.TILE_SIZE_SQRD:
+                try:
+                    h_index = other.world.entities.index(self)
+                    o_index = self.world.entities.index(other)
+                    ydiff = self.transform.y - other.transform.y
+                    if (h_index < o_index and ydiff > 0) or (h_index > o_index and ydiff < 0):
+                        self.world.entities[h_index], self.world.entities[o_index] = self.world.entities[o_index], self.world.entities[h_index]
+                except ValueError:
+                    logging.warning("Couldn't swap 2 entities (%r and %r)" % (self, other))
 
     def handle_collisions(self):
         """
@@ -196,41 +261,25 @@ class Entity(Sprite):
         if not self.world_interactions:
             rects.extend(self.world.get_colliding_blocks(self.aabb, True))
 
-        half = constants.TILE_SIZE / 2
-        half_dim = half, half
-
+        # world collisions
         for rect in rects:
-            r = rect[0]  # strip the dimensions
-            if rect[1] != constants.DIMENSION:
-                half_tile = rect[1][0] / 2, rect[1][1] / 2
-            else:
-                half_tile = half_dim
+            self.resolve_world_collision(rect)
 
-            # resolve collision
-            center_a = self.aabb.center
-            center_b = (r[0] + half_tile[0], r[1] + half_tile[1])
-
-            distance_x = center_a[0] - center_b[0]
-            distance_y = center_a[1] - center_b[1]
-            min_x = self.aabb.width / 2 + half_tile[0]
-            min_y = self.aabb.height / 2 + half_tile[1]
-
-            if distance_x > 0:
-                x_overlap = min_x - distance_x
-            else:
-                x_overlap = -min_x - distance_x
-
-            if distance_y > 0:
-                y_overlap = min_y - distance_y
-            else:
-                y_overlap = -min_y - distance_y
-
-            if abs(y_overlap) < abs(x_overlap):
-                self.aabb.y += y_overlap
-            else:
-                self.aabb.x += x_overlap
+        # entity collisions
+        for other in self.grid_cell:
+            if self != other and not other.dead and self.should_collide(other) and self.collides(other):
+                self._resolve_collision(other)
 
         self.catchup_aab()
+
+    def should_collide(self, entity):
+        return True
+
+    def collides(self, other):
+        dist = util.distance_sqrd(self.transform, other.transform)
+
+        return dist < max(self.aabb.width, self.aabb.height) and \
+               dist < max(other.aabb.width, other.aabb.height) and self.aabb.colliderect(other.aabb)
 
     def handle_interactions(self):
         pass
@@ -309,6 +358,21 @@ class Human(Entity):
             except AttributeError:
                 pass
 
+    def collides(self, other):
+        if other.entitytype == constants.EntityType.HUMAN:
+            return self.rect.colliderect(other.rect)
+        else:
+            return Entity.collides(self, other)
+
+    # def should_collide(self, entity):
+    # return entity.entitytype != constants.EntityType.HUMAN
+
+    def resolve_vehicle_collision(self, vehicle):
+        Entity.resolve_vehicle_collision(self, vehicle)
+
+    def resolve_human_collision(self, human):
+        Entity.resolve_human_collision(self, human)
+
 
 class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
@@ -336,3 +400,7 @@ class Vehicle(Entity):
         random.shuffle(c)
         c.append(alpha)
         return c
+
+    def resolve_human_collision(self, human):
+        Entity.resolve_human_collision(self, human)
+        # human.kill()
