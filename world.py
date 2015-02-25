@@ -105,27 +105,38 @@ class EntityGrid:
         :param the_world: The world
         :param cell_size: The pixel size of each cell
         """
-        width = the_world.pixel_width / cell_size
-        height = the_world.pixel_height / cell_size
+        self.width = the_world.pixel_width / cell_size
+        self.height = the_world.pixel_height / cell_size
 
         self.cell_size = cell_size
-        self.grid = [[set() for _ in xrange(width)] for _ in xrange(height)]
+        self.grid = [[set() for _ in xrange(self.width)] for _ in xrange(self.height)]
         self._last_positions = {}
+
+    def get_cell_entities(self, position):
+        """
+        :param position: (x, y)
+        :return: Set of entities in the grid cell at the given coordinates
+        """
+        return self.grid[position[1]][position[0]]
 
     def move(self, entity):
         """
         Updates the grid_cell of the given entity
         """
-        # move out of old position
-        old_pos = self._last_positions.get(entity)
-        if old_pos:
-            s = self.grid[old_pos]
-            s.remove(entity)
 
         new_pos = (map(lambda x: util.round_down_to_multiple(x, self.cell_size) / self.cell_size, entity.transform))
-        cell = self.grid[new_pos[1]][new_pos[0]]
+        new_pos = min(new_pos[0], self.width - 1), min(new_pos[1], self.height - 1)
+        cell = self.get_cell_entities(new_pos)
         cell.add(entity)
-        entity.grid_cell = cell
+        entity.grid_cell = new_pos
+
+        # move out of old position
+        old_pos = self._last_positions.get(entity)
+        if old_pos and old_pos != new_pos:
+            s = self.get_cell_entities(old_pos)
+            s.remove(entity)
+
+        self._last_positions[entity] = new_pos
 
     def iterate_entities(self):
         """
@@ -153,7 +164,7 @@ class BaseWorld:
         self.layers = OrderedDict()
         self.interact_rects = []
 
-        self.entity_grid = EntityGrid(self, constants.TILE_SIZE)
+        self.entity_grid = EntityGrid(self, constants.TILE_SIZE * 2)
         self.entities = []
         self.entity_buffer = {}
         self._spawns = {}
@@ -184,24 +195,41 @@ class BaseWorld:
         """
         return self.layers[layer][y][x]
 
+    def match_block(self, x, y, predicate):
+        """
+        Returns the first uppermost block that matches the given predicate
+        :param predicate: Function that takes (block, layer)
+        :return: None if no suitable block found, otherwise the block
+        """
+        try:
+            for layer_name, layer in reversed(self.layers.items()):
+                if layer_name != "rects":
+                    b = self.get_block(x, y, layer_name)
+                    if b and predicate(b, layer):
+                        return b
+        except IndexError:
+            pass
+
+        return None
+
     def get_solid_block(self, x, y):
         """
         Finds any collidable/interactable blocks at the given coords and returns the uppermost
         :return None if no collidable block found, otherwise the block
         """
-        for layer_name, layer in reversed(self.layers.items()):
-            if layer_name != "rects":
-                b = self.get_block(x, y, layer_name)
-                if not b:
-                    continue
-                if BlockType.is_collidable(b.blocktype) or BlockType.is_interactable(b.blocktype):
-                    # blanks
-                    if b.blocktype == BlockType.BLANK:
-                        if not layer.solid_blanks:
-                            continue
-                    return b
 
-        return None
+        def predicate(b, layer):
+            if BlockType.is_collidable(b.blocktype) or BlockType.is_interactable(b.blocktype):
+                # blanks
+                if b.blocktype == BlockType.BLANK:
+                    if not layer.solid_blanks:
+                        return False
+                return True
+
+        return self.match_block(x, y, predicate)
+
+    def get_door_block(self, x, y):
+        return self.match_block(x, y, lambda b, layer: b.blocktype == BlockType.SLIDING_DOOR or b.blocktype == BlockType.ENTRANCE_MAT)
 
     def set_block(self, x, y, block, layer, overwrite_collisions=True):
         """
@@ -321,6 +349,14 @@ class BaseWorld:
         else:
             self.tick_entities(*entity_tick_args)
 
+            # debug draw entity grid
+            # if render:
+            # if constants.STATEMANAGER.controller.entity:
+            #         for i in xrange(len(self.entity_grid.grid)):
+            #             for j in xrange(len(self.entity_grid.grid[i])):
+            #                 rect = util.Rect(j * self.entity_grid.cell_size, i * self.entity_grid.cell_size, self.entity_grid.cell_size, self.entity_grid.cell_size)
+            #                 constants.SCREEN.draw_rect(rect, filled=False)
+
     def iterate_blocks(self, x1=0, y1=0, x2=-1, y2=-1, layer="terrain"):
         """
         Iterate through blocks in the given layer, optionally only in the specified area
@@ -372,7 +408,7 @@ class BaseWorld:
         if not self.is_in_range(*next_tile):
             return True
 
-        block = self.get_solid_block(int(next_tile[0]), int(next_tile[1]))
+        block = self.get_solid_block(*util.intify(next_tile))
         return bool(block)
 
     def get_surrounding_blocks(self, pos, layer="terrain"):
@@ -411,13 +447,25 @@ class BaseWorld:
         if loc:
             entity.move_entity(*loc)
 
+    def get_spawn(self, index, entitytype):
+        """
+        :return: The spawn at the given index and entitytype, with all the fiddly details: x, y, orientation, width, height
+        """
+        return self._spawns[entitytype][index]
+
+    def get_spawn_location(self, index, entitytype):
+        """
+        :return: The (x, y) position of the spawn at the given index and entitytype
+        """
+        return self.get_spawn(index, entitytype)[0:2]
+
     def move_to_spawn(self, entity, index, vary=True):
         """
         :param index: Spawn index
         :param vary: Should the spawn position be fuzzed a bit
         """
         assert self == entity.world
-        spawn = self._spawns[entity.entitytype][index]
+        spawn = self.get_spawn(index, entity.entitytype)
         pos = (spawn[0] + random.randrange(spawn[3]), spawn[1] + random.randrange(spawn[4])) if vary else spawn[:2]
         entity.move_entity(*pos)
         entity.turn(spawn[2])
@@ -1294,6 +1342,11 @@ class InteractableBlock(Block):
         pass
 
 
+class InteractableCameraBlock(InteractableBlock):
+    def interact_camera(self, x, y):
+        pass
+
+
 class InteractableDoorBlock(InteractableBlock):
     def __init__(self, blocktype, render_id=None):
         InteractableBlock.__init__(self, blocktype, render_id)
@@ -1301,6 +1354,9 @@ class InteractableDoorBlock(InteractableBlock):
 
     def interact(self, human, x, y):
         self.building.enter(human)
+
+    def interact_camera(self, x, y):
+        pass
 
 
 class InteractableExitDoormatBlock(InteractableBlock):
@@ -1313,3 +1369,6 @@ class InteractableExitDoormatBlock(InteractableBlock):
         dy = c[1] - y
         if 0 < dy <= constants.TILE_SIZE / 2:
             self.building.exit(human)
+
+    def interact_camera(self, x, y):
+        pass

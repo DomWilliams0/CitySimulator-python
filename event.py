@@ -17,6 +17,16 @@ def call_event(eventtype, **args):
     pygame.event.post(pygame.event.Event(pygame.USEREVENT, dict({"eventtype": eventtype}.items() + args.items())))
 
 
+def call_human_building_movement(human, building, entered):
+    """
+    Helper function, to post a building entry event
+    :param human: The entering human
+    :param building: The buliding
+    :param entered: True if entering, False if exiting
+    """
+    call_event(BUILDING_ENTER if entered else BUILDING_EXIT, entity=human, building=building)
+
+
 def simplify_key_event(event):
     """
     :return: (keydown, key) if the given event is a key event, otherwise None

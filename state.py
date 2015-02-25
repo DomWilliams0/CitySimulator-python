@@ -138,13 +138,14 @@ class StateManager:
             if e.entity == self.controller.entity:
                 # building enter/exit
                 if hasattr(e, "building"):
-                    building = e.building
-                    if e.eventtype == event_module.BUILDING_ENTER:
-                        constants.SCREEN.camera.update_boundaries(building.inside)
-                        self.change_state(BuildingState(building))
-                    else:
-                        constants.SCREEN.camera.update_boundaries(building.world)
-                        self.change_state()
+                    building = e.building if e.eventtype == event_module.BUILDING_ENTER else None
+                    self.switch_to_building(building)
+
+    def switch_to_building(self, building):
+        """
+        :param building: Building to switch to, or None to exit
+        """
+        self.change_state(BuildingState(building) if building else None)
 
     def tick_transition(self):
         """
@@ -250,11 +251,47 @@ class BaseGameState(State):
             if closest:
                 constants.STATEMANAGER.transfer_control(closest)
 
-        # release controler
+            # block click
+            else:
+                world_pos = util.intify(world_pos)
+                # door block
+                door_block = self.world.get_door_block(*util.pixel_to_tile(world_pos))
+                if door_block:
+                    building = door_block.building
+                    entering = door_block.blocktype == world_module.BlockType.SLIDING_DOOR
+
+                    constants.STATEMANAGER.switch_to_building(building if entering else None)
+
+                    # centre camera on door
+                    closest_door = None
+                    if entering:
+                        # find inner door
+                        world_pos = map(lambda x: util.round_down_to_multiple(x, constants.TILE_SIZE), world_pos)
+                        tup_world_pos = tuple(world_pos)
+                        for d in building.doors:
+                            if tuple(d[1]) == tup_world_pos:
+                                closest_door = d[0]
+                                break
+
+                    else:
+                        closest_door = building.get_closest_exit(world_pos)
+
+                    if closest_door is None:
+                        logging.warning("Could not find the %s door position" % "entrance" if entering else "exit")
+
+                    else:
+                        constants.SCREEN.camera.centre(closest_door)
+                        constants.STATEMANAGER.transfer_control(None)
+
+        # release controller
         elif event.type == pygame.KEYDOWN and event.key == constants.Input.RELEASE_CONTROL:
             constants.STATEMANAGER.transfer_control(None)
         else:
             State.handle_event(self, event)
+
+    def on_load(self):
+        constants.SCREEN.camera.update_boundaries(self.world)
+        State.on_load(self)
 
 
 class OutsideWorldState(BaseGameState):
@@ -281,7 +318,7 @@ class OutsideWorldState(BaseGameState):
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(20):
+        for _ in xrange(10):
             Human(self.world)
 
         # add some vehicles

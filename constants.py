@@ -248,6 +248,8 @@ class Camera:
 class Speed:
     VEHICLE_MIN = 200
     VEHICLE_MAX = 400
+    VEHICLE_DAMAGE = VEHICLE_MIN / 2
+    VEHICLE_KILL = VEHICLE_MAX / 2
 
     HUMAN_MIN = 80
     HUMAN_FAST = 100

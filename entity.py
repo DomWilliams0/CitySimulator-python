@@ -33,7 +33,7 @@ class Entity(Sprite):
         self.transform = util.Transform()
 
         self.world = world
-        self.grid_cell = None
+        self.grid_cell = (0, 0)
         world.spawn_entity(self, loc)
 
         self.velocity = Vec2d(0, 0)
@@ -266,20 +266,33 @@ class Entity(Sprite):
             self.resolve_world_collision(rect)
 
         # entity collisions
-        for other in self.grid_cell:
-            if self != other and not other.dead and self.should_collide(other) and self.collides(other):
-                self._resolve_collision(other)
+        for grid_cell in self._iterate_surrounding_grid_cells():
+            for other in grid_cell:
+                if self != other and not other.dead and self.collides(other):
+                    self._resolve_collision(other)
 
         self.catchup_aab()
 
-    def should_collide(self, entity):
-        return True
+    # def should_collide(self, entity):
+    # return True
+
+    def _iterate_surrounding_grid_cells(self):
+        """
+        :return: A series of sets of entities in the surrounding grid cells
+        """
+        try:
+            for i in (-1, 0, 1):
+                for j in (-1, 0, 1):
+                    coord = self.grid_cell[0] + i, self.grid_cell[1] + j
+                    yield self.world.entity_grid.get_cell_entities(coord)
+        except IndexError:
+            pass
 
     def collides(self, other):
-        dist = util.distance_sqrd(self.transform, other.transform)
-
-        return dist < max(self.aabb.width, self.aabb.height) and \
-               dist < max(other.aabb.width, other.aabb.height) and self.aabb.colliderect(other.aabb)
+        """
+        :return: If this entity is colliding with the other
+        """
+        return self.aabb.colliderect(other.aabb)
 
     def handle_interactions(self):
         pass
@@ -403,4 +416,17 @@ class Vehicle(Entity):
 
     def resolve_human_collision(self, human):
         Entity.resolve_human_collision(self, human)
-        # human.kill()
+        speed = self.velocity.get_length_sqrd()
+
+        speed_factor = 1
+        if speed > constants.Speed.VEHICLE_KILL ** 2:
+            human.kill()
+            speed_factor = 0.5
+        elif speed > constants.Speed.VEHICLE_DAMAGE ** 2:
+            # todo damage
+            speed_factor = 0.8
+            pass
+
+        # slow down
+        if speed_factor < 1:
+            self.controller.slow(speed_factor)

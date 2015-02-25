@@ -76,6 +76,13 @@ def tile_to_pixel(pos):
     return pos[0] * constants.TILE_SIZE, pos[1] * constants.TILE_SIZE
 
 
+def intify(x):
+    """
+    Casts all elements to int
+    """
+    return map(int, x)
+
+
 def parse_orientation(char):
     """
     :param char: NESW, or R for random
@@ -197,8 +204,11 @@ class Rect:
         :param args: ((x, y), (w, h)) or (x, y, w, h) or another Rect
         """
         l = len(args)
-        if l == 2 and isinstance(args[0], tuple):  # ((,), (,))
-            self._init(*self._tuple_from_arg(args))
+        if l == 2:
+            if isinstance(args[0], tuple):  # ((,), (,))
+                self._init(*self._tuple_from_arg(args))
+            else:
+                self._init(args[0], args[1], 0, 0)
         elif l == 4:  # (,,,)
             self._init(*args)
         elif l == 1:

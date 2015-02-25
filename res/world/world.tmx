@@ -176,7 +176,7 @@
   </object>
  </objectgroup>
  <objectgroup name="_spawns">
-  <object x="544" y="128" width="48" height="48">
+  <object x="528" y="112" width="64" height="288">
    <properties>
     <property name="entitytype" value="human"/>
     <property name="orientation" value="R"/>

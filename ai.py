@@ -499,11 +499,6 @@ class VehicleController(BaseController):
 
         return 0
 
-    # def __setattr__(self, key, value):
-    # if key == "state" and value != VehicleController.STOPPED:
-    # self.press_pedal(value)
-    #     self.__dict__[key] = value
-
     def press_pedal(self, state, use_backup_gen=False):
         """
         Applies the pedal for the given VehicleController state
@@ -519,6 +514,14 @@ class VehicleController(BaseController):
             if p.is_applied():
                 return p.get_force()
         return None
+
+    def slow(self, speed_multiple):
+        """
+        Multiplies the current speed by the given value, then applies the accelerator to catch up to that speed again
+        """
+        self.current_speed *= speed_multiple
+        if self.state == VehicleController.ACCELERATING:
+            self.press_pedal(self.state)
 
     def tick(self):
         # todo: only change direction to opposite if stopped, otherwise brake

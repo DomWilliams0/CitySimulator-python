@@ -53,13 +53,19 @@ class Building:
         for b in self.world.iterate_blocks(self.rect.x, self.rect.y, *br, layer=layer):
             yield b
 
-    def _closest(self, human, entering):
+    def _closest_door_index(self, position, entering):
         """
         :param entering: True if entering, otherwise exiting
         :return: The closest door spawn index
         """
-        pos = human.rect.center
-        return min(enumerate(util.distance_sqrd(l[1 if entering else 0], pos) for l in self.doors), key=lambda x: x[1])[0]
+        return min(enumerate(util.distance_sqrd(l[1 if entering else 0], position) for l in self.doors), key=lambda x: x[1])[0]
+
+    def get_closest_exit(self, position):
+        """
+        :return zhe appropiate outside world position, relating to the given inside pixel coordinate
+        """
+        index = self._closest_door_index(position, False)
+        return self.doors[index][1]
 
     def enter(self, human):
         """
@@ -69,10 +75,10 @@ class Building:
         if human not in self.inside.entities:
             human.visible = False
 
-            self.inside.spawn_entity_at_spawn(human, self._closest(human, True), vary=False)
+            self.inside.spawn_entity_at_spawn(human, self._closest_door_index(human.transform, True), vary=False)
             human.turn(entity.constants.Direction.NORTH)
 
-            event.call_event(event.BUILDING_ENTER, entity=human, building=self)
+            event.call_human_building_movement(human, self, True)
 
     def exit(self, human):
         """
@@ -80,14 +86,14 @@ class Building:
         If they are not inside, nothing happens
         """
         try:
-            door = self.doors[self._closest(human, False)][1]
+            door = self.get_closest_exit(human.transform)
             self.world.spawn_entity(human)
 
             # vary exit point slightly so everyone doesn't appear in the same place when leaving       
             human.move_entity(door[0] + random.randrange(constants.TILE_SIZE), door[1] + constants.TILE_SIZE * 1.5 + random.randrange(constants.TILE_SIZE / 4))
             human.turn(entity.constants.Direction.SOUTH)
 
-            event.call_event(event.BUILDING_EXIT, entity=human, building=self)
+            event.call_human_building_movement(human, self, False)
 
         except ValueError:
             pass
