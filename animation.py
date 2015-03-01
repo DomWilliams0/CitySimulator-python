@@ -167,6 +167,11 @@ class HumanSpriteSheet(BaseSpriteSheet):
         self._load_sprites(sheet_dimensions, sprite_dimensions, -1, 0)
         self._rearrange_directional_sprites()
 
+        def scale_dimensions(surface, scale):
+            return int(surface.get_width() * scale), int(surface.get_height() * scale)
+
+        self.small_freeze_frames = [pygame.transform.scale(s[0], scale_dimensions(s[0], constants.PASSENGER_SCALE)) for s in self.sprites]
+
 
 class VehicleSpriteSheet(BaseSpriteSheet):
     """
@@ -196,7 +201,7 @@ class VehicleSpriteSheet(BaseSpriteSheet):
                 for x in xrange(sprite.get_width()):
                     for y in xrange(sprite.get_height()):
                         pix = sprite.unmap_rgb(pixels[x, y])
-                        if pix[3] != 255 and pix[3] != 0:
+                        if all(map(lambda p: p == 127, pix[:3])):
                             mixed = (util.mix_colours([pix[3]] * 3, colour))
                             pixels[x, y] = sprite.map_rgb(mixed)
 
@@ -242,13 +247,12 @@ class HumanAnimator:
         moving = self.entity.is_moving()
         if moving:
             if not self.was_moving:
-                self.turn(self.sequence_index, starting_index=1)  # todo make sure first frame in all vehicle animations are stationery
+                self.turn(self.sequence_index, starting_index=1)
             sprite, self.current_frame = self.walk_gen.next()
         else:
             sprite = self.spritesheet.sprites[self.sequence_index][0]
 
         speed = self._get_speed()
-        # if speed != self.last_speed and speed % 1 == 0:
         if speed != self.last_speed:
             self.last_speed = speed
             self.animation_step = 18.0 / speed if speed else 0

@@ -10,7 +10,8 @@ import constants
 import world as world_module
 
 
-_SURROUNDING_OFFSETS = (0, -1), (-1, 0), (1, 0), (0, 1)
+SURROUNDING_OFFSETS = (0, -1), (-1, 0), (1, 0), (0, 1)
+SURROUNDING_DIAGONAL_OFFSETS = (0, 0), (-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)
 
 
 def get_relative_path(path):
@@ -146,13 +147,6 @@ def mix_colours(c1, c2, ensure_alpha=True):
     return mixed
 
 
-def get_surrounding_offsets():
-    """
-    :return: 4 relative offsets
-    """
-    return _SURROUNDING_OFFSETS
-
-
 def modify_attr(obj, attribute, func):
     """
     Modify current value of given attribute (ie +=)
@@ -190,7 +184,7 @@ def add_direction(position, direction):
     """
     :return: Position modified by the given direction
     """
-    delta = _SURROUNDING_OFFSETS[direction]
+    delta = SURROUNDING_OFFSETS[direction]
     return map(operator.add, position, delta)
 
 
@@ -241,6 +235,8 @@ class Rect:
             return self.x + self.width / 2, self.y
         elif key == 'center':
             return self.x + self.width / 2, self.y + self.height / 2
+        elif key == 'topcenter':
+            return self.x + self.width / 2, self.y
         else:
             return self.__dict__[key]
 
@@ -287,6 +283,12 @@ class Rect:
         :return: Tuple of x, y, width, height
         """
         return self.x, self.y, self.width, self.height
+
+    def as_half_tuple(self):
+        """
+        :return: Tuple of (x, y), (width, height)
+        """
+        return (self.x, self.y), (self.width, self.height)
 
     def _tuple_from_arg(self, arg):
         l = len(arg)

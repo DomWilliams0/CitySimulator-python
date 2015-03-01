@@ -56,6 +56,9 @@ class GameScreen:
         """
         self._window.blit(sprite, self.camera.apply_rect(loc))
 
+    def draw_sprite_part(self, sprite, loc, area=None):
+        self._window.blit(sprite, self.camera.apply(loc), area)
+
     def draw_block(self, block, loc, surface=None):
         """
         Draws a block to the given loc on the given surface (the window if None)
@@ -97,11 +100,11 @@ class GameScreen:
         surface = self.font.render(string, 1, colour)
         self._window.blit(surface, self.camera.apply(pos) if not absolute else pos)
 
-    def blit(self, surface, pos=(0, 0)):
+    def blit(self, surface, pos=(0, 0), area=None):
         """
         Blits the given surface onto the screen at the given position
         """
-        self._window.blit(surface, pos)
+        self._window.blit(surface, pos, area)
 
 
 class Camera:
@@ -116,7 +119,6 @@ class Camera:
         self.speed = speed
         self._target_entity = target_entity
         self._target_position = None
-        self._target_world = None
 
         self.world = None
         self.world_dimensions = None
@@ -132,9 +134,6 @@ class Camera:
 
         if not self._target_position:
             return
-
-        # if self._target_world != self.world:
-        # return
 
         v = self._direction_to_target(self._target_position)
 
@@ -201,7 +200,7 @@ class Camera:
         :param rect Either a util.Rect or a tuple ((x, y), (w, h))
         """
         if not isinstance(rect, util.Rect):
-            rect = rect.x
+            rect = rect[0]
         else:
             rect = rect.x, rect.y
         return self.apply(rect)
@@ -268,8 +267,8 @@ class Direction:
     EAST = 3
 
     VALUES = [NORTH, WEST, SOUTH, EAST]
-    HORIZONTALS = [EAST, WEST]
-    VERTICALS = [NORTH, SOUTH]
+    HORIZONTALS = {EAST, WEST}
+    VERTICALS = {NORTH, SOUTH}
 
     @staticmethod
     def random():
@@ -328,6 +327,7 @@ class Input:
 
     BRAKE = pygame.K_SPACE
 
+    INTERACT = pygame.K_e
     RELEASE_CONTROL = pygame.K_TAB
     QUIT = pygame.K_ESCAPE
 
@@ -346,3 +346,5 @@ TILE_SIZE = 32
 DIMENSION = (TILE_SIZE, TILE_SIZE)
 TILE_SIZE_SQRD = TILE_SIZE ** 2
 HALF_TILE_SIZE = TILE_SIZE / 2, TILE_SIZE / 2
+
+PASSENGER_SCALE = 0.75

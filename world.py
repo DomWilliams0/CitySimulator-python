@@ -2,6 +2,7 @@ from collections import OrderedDict
 import random
 import operator
 import logging
+import sys
 
 import pygame
 
@@ -111,6 +112,7 @@ class EntityGrid:
         self.cell_size = cell_size
         self.grid = [[set() for _ in xrange(self.width)] for _ in xrange(self.height)]
         self._last_positions = {}
+        self._disabled = {}
 
     def get_cell_entities(self, position):
         """
@@ -119,24 +121,42 @@ class EntityGrid:
         """
         return self.grid[position[1]][position[0]]
 
-    def move(self, entity):
+    def get_nearest_cell(self, position):
+        new_pos = (map(lambda x: util.round_down_to_multiple(x, self.cell_size) / self.cell_size, position))
+        new_pos = min(new_pos[0], self.width - 1), min(new_pos[1], self.height - 1)
+        return new_pos
+
+    def move(self, e):
         """
         Updates the grid_cell of the given entity
         """
+        # disabled
+        if e in self._disabled:
+            return
 
-        new_pos = (map(lambda x: util.round_down_to_multiple(x, self.cell_size) / self.cell_size, entity.transform))
-        new_pos = min(new_pos[0], self.width - 1), min(new_pos[1], self.height - 1)
+        new_pos = self.get_nearest_cell(e.transform)
         cell = self.get_cell_entities(new_pos)
-        cell.add(entity)
-        entity.grid_cell = new_pos
+        cell.add(e)
+        e.grid_cell = new_pos
 
         # move out of old position
-        old_pos = self._last_positions.get(entity)
+        old_pos = self._last_positions.get(e)
         if old_pos and old_pos != new_pos:
             s = self.get_cell_entities(old_pos)
-            s.remove(entity)
+            s.remove(e)
 
-        self._last_positions[entity] = new_pos
+        self._last_positions[e] = new_pos
+
+    def set_enabled(self, entity, enabled):
+        if not enabled:
+            self._disabled[entity] = entity.grid_cell
+            self.get_cell_entities(entity.grid_cell).remove(entity)
+            entity.grid_cell = None
+        else:
+            entity.grid_cell = self._disabled[entity]
+            self.get_cell_entities(entity.grid_cell).add(entity)
+            del self._disabled[entity]
+        entity.collisions_enabled = enabled
 
     def iterate_entities(self):
         """
@@ -305,6 +325,9 @@ class BaseWorld:
         Ticks all entities
         :param boundaries Only render those in the given boundaries (format: x1, y1, x2, y2)
         """
+        # sort by depth
+        self.depth_sort_entities()
+
         # draw entities
         for e in self.entities:
             if e.dead:
@@ -322,6 +345,40 @@ class BaseWorld:
             else:
                 self.entities.append(e)
         self.entity_buffer.clear()
+
+    def depth_sort_entities(self):
+        e = self.entities
+        for i in xrange(1, len(e)):
+            j = i
+            c = e[j]
+            while j > 0 and c.transform.y < e[j - 1].transform.y:
+                e[j] = e[j - 1]
+                j -= 1
+            e[j] = c
+
+    def iterate_surrounding_grid_cells(self, grid_cell):
+        """
+        :return: A series of sets of entities in the surrounding grid cells
+        """
+        try:
+            for i in (-1, 0, 1):
+                for j in (-1, 0, 1):
+                    coord = grid_cell[0] + i, grid_cell[1] + j
+                    yield self.entity_grid.get_cell_entities(coord)
+        except IndexError:
+            pass
+
+    def match_nearest_entity(self, position, grid_cell, predicate, range_sqrd=-1):
+        min_distance_sqrd = sys.maxsize
+        nearest_entity = None
+        for grid_cell in self.iterate_surrounding_grid_cells(grid_cell):
+            for e in grid_cell:
+                if not predicate or predicate(e):
+                    dist = util.distance_sqrd(e.transform, position)
+                    if dist < min_distance_sqrd:
+                        min_distance_sqrd = dist
+                        nearest_entity = e
+        return nearest_entity if range_sqrd > 0 and min_distance_sqrd <= range_sqrd else None
 
     def tick(self, render=True):
         """
@@ -416,7 +473,7 @@ class BaseWorld:
         Finds the 4 surrounding blocks around the given tile position
         :return block, blockpos, relativecoords ie (-1, 0)
         """
-        for x, y in util.get_surrounding_offsets():
+        for x, y in util.SURROUNDING_OFFSETS:
             posx, posy = x + pos[0], y + pos[1]
             if self.is_in_range(posx, posy):
                 yield self.get_block(posx, posy, layer), (posx, posy), (x, y)

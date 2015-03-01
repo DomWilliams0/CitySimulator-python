@@ -39,6 +39,7 @@ class Entity(Sprite):
         self.velocity = Vec2d(0, 0)
 
         self.world_collisions = world_collisions
+        self.collisions_enabled = True
         self.world_interactions = world_interactions
         self.can_leave_world = can_leave_world
 
@@ -64,18 +65,27 @@ class Entity(Sprite):
         ssheet = shared_sheet if not clone_spritesheet else animation.clone(shared_sheet)
         self.animator = animator_cls(self, ssheet)
 
-    def tick(self, render):
+    def tick(self, render, block_input=False):
         """
         Called per frame
         """
-        if self.controller:
+        if self.controller and not block_input:
             self.controller.tick()
 
         self._update_direction()
         self.move()
 
-        if render and self.visible:
+        if render:
+            self.render()
+
+    def render(self):
+        """
+        Renders the entity, if they are visible
+        """
+        if self.visible:
             self.animator.tick()
+            # constants.SCREEN.draw_rect(self.rect, filled=False)
+            # constants.SCREEN.draw_rect(self.aabb, filled=False, colour=(0, 255, 0))
 
     def move(self):
         """
@@ -94,7 +104,7 @@ class Entity(Sprite):
         self.move_entity(*delta)
 
         # collisions
-        if self.world_collisions:
+        if self.world_collisions and self.collisions_enabled:
             self.handle_collisions()
 
         if not self.can_leave_world:
@@ -175,6 +185,8 @@ class Entity(Sprite):
         Marks the entity as dead, to be removed on next tick
         """
         self.dead = True
+        if self == constants.STATEMANAGER.controller.entity:
+            constants.STATEMANAGER.transfer_control(None)
 
     def is_moving(self):
         """
@@ -194,21 +206,20 @@ class Entity(Sprite):
 
     def _resolve_collision(self, other):
         etype = other.entitytype
+        f = None
         if etype == constants.EntityType.HUMAN:
             f = self.resolve_human_collision
         elif etype == constants.EntityType.VEHICLE:
             f = self.resolve_vehicle_collision
-        else:
-            f = None
 
         if f:
             f(other)
 
     def resolve_vehicle_collision(self, vehicle):
-        self.swap_render_order(vehicle)
+        pass
 
     def resolve_human_collision(self, human):
-        self.swap_render_order(human)
+        pass
 
     def resolve_world_collision(self, block_rect):
         r = block_rect[0]  # strip the dimensions
@@ -241,17 +252,17 @@ class Entity(Sprite):
         """
         Attempts to swap the two entities if they're the wrong way round
         """
-        if other.id < self.id:
-            distance = util.distance_sqrd(self.transform, other.transform)
-            if distance < constants.TILE_SIZE_SQRD:
-                try:
-                    h_index = other.world.entities.index(self)
-                    o_index = self.world.entities.index(other)
-                    ydiff = self.transform.y - other.transform.y
-                    if (h_index < o_index and ydiff > 0) or (h_index > o_index and ydiff < 0):
-                        self.world.entities[h_index], self.world.entities[o_index] = self.world.entities[o_index], self.world.entities[h_index]
-                except ValueError:
-                    logging.warning("Couldn't swap 2 entities (%r and %r)" % (self, other))
+        # if other.id < self.id:
+        distance = util.distance_sqrd(self.transform, other.transform)
+        if distance < (constants.TILE_SIZE * 2) ** 2:
+            try:
+                h_index = other.world.entities.index(self)
+                o_index = self.world.entities.index(other)
+                ydiff = self.transform.y - other.transform.y
+                if (h_index < o_index and ydiff > 0) or (h_index > o_index and ydiff < 0):
+                    self.world.entities[h_index], self.world.entities[o_index] = self.world.entities[o_index], self.world.entities[h_index]
+            except ValueError:
+                logging.warning("Couldn't swap 2 entities (%r and %r)" % (self, other))
 
     def handle_collisions(self):
         """
@@ -266,7 +277,7 @@ class Entity(Sprite):
             self.resolve_world_collision(rect)
 
         # entity collisions
-        for grid_cell in self._iterate_surrounding_grid_cells():
+        for grid_cell in self.world.iterate_surrounding_grid_cells(self.grid_cell):
             for other in grid_cell:
                 if self != other and not other.dead and self.collides(other):
                     self._resolve_collision(other)
@@ -275,18 +286,6 @@ class Entity(Sprite):
 
     # def should_collide(self, entity):
     # return True
-
-    def _iterate_surrounding_grid_cells(self):
-        """
-        :return: A series of sets of entities in the surrounding grid cells
-        """
-        try:
-            for i in (-1, 0, 1):
-                for j in (-1, 0, 1):
-                    coord = self.grid_cell[0] + i, self.grid_cell[1] + j
-                    yield self.world.entity_grid.get_cell_entities(coord)
-        except IndexError:
-            pass
 
     def collides(self, other):
         """
@@ -339,6 +338,7 @@ class Human(Entity):
         Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet, world_interactions=True)
 
         self.controller = ai.HumanController(self)
+        self.vehicle = None
 
         self.interact_aabb = util.Rect(self.aabb)
         offset = self.rect.width / 4
@@ -371,20 +371,53 @@ class Human(Entity):
             except AttributeError:
                 pass
 
-    def collides(self, other):
-        if other.entitytype == constants.EntityType.HUMAN:
-            return self.rect.colliderect(other.rect)
-        else:
-            return Entity.collides(self, other)
-
     # def should_collide(self, entity):
     # return entity.entitytype != constants.EntityType.HUMAN
 
     def resolve_vehicle_collision(self, vehicle):
-        Entity.resolve_vehicle_collision(self, vehicle)
+        self.resolve_world_collision(vehicle.aabb.as_half_tuple())
 
-    def resolve_human_collision(self, human):
-        Entity.resolve_human_collision(self, human)
+    def entered_vehicle(self, vehicle):
+        """
+        Called after the vehicle has acknowledged the entry
+        """
+        self.vehicle = vehicle
+
+        # transfer control to vehicle
+        if constants.STATEMANAGER.controller.entity == self:
+            constants.STATEMANAGER.transfer_control(vehicle)
+
+        else:
+            self.controller.suppress_ai(True)
+
+        # disable collisions
+        self.world.entity_grid.set_enabled(self, False)
+
+        self.controller.halt()
+
+    def exited_vehicle(self, vehicle):
+        """
+        Called before the vehicle has acknowledged the exit
+        """
+        self.vehicle = None
+
+        # transfer control back to this human
+        if constants.STATEMANAGER.controller.entity == vehicle:
+            constants.STATEMANAGER.transfer_control(self)
+
+        else:
+            self.controller.suppress_ai(False)
+
+        # reenable collisions
+        self.world.entity_grid.set_enabled(self, True)
+
+    def tick(self, render, block_input=False):
+        Entity.tick(self, render, self.vehicle is not None)
+
+    def render(self):
+        # rendering is managed by the vehicle
+        if not self.vehicle:
+            Entity.render(self)
 
 
 class Vehicle(Entity):
@@ -395,6 +428,9 @@ class Vehicle(Entity):
         self.aabb.height /= 2
 
         self.animator.spritesheet.set_colour(self._random_colour())
+
+        self.seats = [(None, None) for _ in xrange(2)]  # (entity, list of sprites)
+        self.passengers = {}
 
         # todo should move to road spawn
         self.world.move_to_spawn(self, 0)
@@ -414,19 +450,140 @@ class Vehicle(Entity):
         c.append(alpha)
         return c
 
+    def collides(self, other):
+        return self.rect.colliderect(other.rect)
+
     def resolve_human_collision(self, human):
-        Entity.resolve_human_collision(self, human)
+        # no collisions with passengers
+        if human in self.passengers:
+            return
+
         speed = self.velocity.get_length_sqrd()
 
         speed_factor = 1
         if speed > constants.Speed.VEHICLE_KILL ** 2:
             human.kill()
-            speed_factor = 0.5
+            speed_factor = 0.7
+            # todo blood splatter
         elif speed > constants.Speed.VEHICLE_DAMAGE ** 2:
             # todo damage
             speed_factor = 0.8
-            pass
 
         # slow down
         if speed_factor < 1:
             self.controller.slow(speed_factor)
+
+    def __getattr__(self, item):
+        if item == "driver":
+            return self.seats[0][0]
+        return self.__dict__[item]
+
+    def enter(self, human):
+        """
+        :return Whether or not the entering was successful
+        """
+        free_seat = self.get_first_free_seat()
+        if free_seat < 0:
+            return False
+        sprites = human.animator.spritesheet.small_freeze_frames
+        self.seats[free_seat] = human, sprites
+        self.passengers[human] = free_seat
+        human.entered_vehicle(self)
+        return True
+
+    def exit(self, seat):
+        """
+        :return: Whether or not the exiting was successful
+        """
+        human = self.seats[seat][0]
+        if human:
+            human.exited_vehicle(self)
+            index = self.passengers[human]
+            self.seats[index] = None, None
+            del self.passengers[human]
+            return True
+        return False
+
+    def is_empty(self):
+        return not bool(self.passengers)
+
+    def get_first_free_seat(self):
+        """
+        :return: Index of first free seat, otherwise -1 if there are none
+        """
+        return self.match_first_seat(lambda x: x is None)
+
+    def get_first_full_seat(self):
+        """
+        :return: Index of first free seat, otherwise -1 if there are none
+        """
+        return self.match_first_seat(lambda x: x is not None)
+
+    def match_first_seat(self, predicate):
+        for i, (s, _) in enumerate(self.seats):
+            if predicate(s):
+                return i
+        return -1
+
+    def tick(self, render, block_input=False):
+        Entity.tick(self, render)
+
+        # passengers
+        for human in self.passengers:
+            if not human:
+                continue
+            human.move_entity(*self.transform)
+            human.direction = self.direction
+
+    def _render_seat(self, horizontal, front_seat):
+        sprites = self.seats[0 if front_seat else 1][1]
+        tc = list(self.rect.topcenter)
+        tc[0] -= self.rect.width / 4
+        tc[1] += 1
+        delta = animation.HUMAN_DIMENSION[0] * constants.PASSENGER_SCALE
+
+        if not horizontal:
+            pos = tc[0] - delta * 0.25, tc[1]
+
+        else:
+            if self.direction == constants.Direction.WEST:
+                delta *= -1
+                tc[0] -= delta * 0.1
+
+            if not front_seat:
+                delta *= -1
+
+            pos = tc[0] + (delta * 0.3), tc[1]
+
+        sprite = sprites[self.direction]
+
+        constants.SCREEN.draw_sprite_part(sprite, pos, (0, 0, sprite.get_width(), sprite.get_height() * 0.6))
+
+    def render(self):
+        Entity.render(self)
+
+        if self.passengers:
+            # todo: only if direction changes: calculate on turn() and save as a field
+            back_seat = True
+            front_seat = True
+
+            horizontal = self.direction in constants.Direction.HORIZONTALS
+            if not horizontal:
+                if self.direction == constants.Direction.SOUTH:
+                    back_seat = False
+                else:
+                    front_seat = False
+
+            if front_seat and self.seats[0][0]:
+                self._render_seat(horizontal, True)
+            if back_seat and self.seats[1][0]:
+                self._render_seat(horizontal, False)
+
+        """
+            don't have transparent windows: draw the car in two separate parts
+            specify regions in car file (load a vehicle as xml? one tag is filepath, then offsets and rects etc)
+
+            draw the entire car (opaque the windows)
+            draw the passengers in the set rectangles for windows
+            redraw the transparent window over the top
+        """

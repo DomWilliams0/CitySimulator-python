@@ -1,7 +1,5 @@
 import random
 import logging
-import operator
-import sys
 
 import pygame
 
@@ -42,6 +40,7 @@ class FadeTransition(Transition):
     """
     Fades the screen from black
     """
+
     def __init__(self):
         Transition.__init__(self)
         self.alpha = 255
@@ -61,6 +60,7 @@ class ZoomTransition(Transition):
     """
     Zooms out from black from the centre
     """
+
     def __init__(self):
         Transition.__init__(self)
         scale = 10
@@ -83,6 +83,7 @@ class StateManager:
     """
     Manages the current state, and player input
     """
+
     def __init__(self):
         self._stack = util.Stack()
         self.transition = None
@@ -120,10 +121,6 @@ class StateManager:
 
         # mouse visibility
         pygame.mouse.set_visible(current.mouse_visible)
-
-        # update camera boundaries
-        if current.world:
-            constants.SCREEN.camera.update_boundaries(current.world)
 
     def handle_user_event(self, e):
         """
@@ -200,21 +197,19 @@ class State:
         """
         Processes events
         """
-        constants.STATEMANAGER.controller.handle_event(event)
+        pass
 
     def tick(self):
         """
         Called per frame
         """
-        for w in world_module.WORLDS:
-            w.tick(render=(w == self.world))
-        constants.STATEMANAGER.controller.tick()
+        pass
 
     def on_load(self):
         """
         Called every time the state is loaded
         """
-        constants.SCREEN.camera.centre()
+        pass
 
     def on_unload(self):
         """
@@ -227,71 +222,21 @@ class BaseGameState(State):
     """
     Base in-game state
     """
+
     def __init__(self):
         State.__init__(self, mouse_visible=True)
 
-    def handle_event(self, event):
-        """
-        Controls entity selection with the mouse, otherwise delegates event to current state
-        :param event: pygame event
-        """
-        # controller selection
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            world_pos = map(operator.add, event.pos, constants.SCREEN.camera.transform)
-
-            # find closest entity within a tile's distance of the mouse
-            closest = None
-            closest_distance = sys.maxsize
-            for entity in self.world.entities:
-                dist = util.distance_sqrd(entity.transform, world_pos)
-                if dist < constants.TILE_SIZE_SQRD and dist < closest_distance:
-                    closest_distance = dist
-                    closest = entity
-
-            if closest:
-                constants.STATEMANAGER.transfer_control(closest)
-
-            # block click
-            else:
-                world_pos = util.intify(world_pos)
-                # door block
-                door_block = self.world.get_door_block(*util.pixel_to_tile(world_pos))
-                if door_block:
-                    building = door_block.building
-                    entering = door_block.blocktype == world_module.BlockType.SLIDING_DOOR
-
-                    constants.STATEMANAGER.switch_to_building(building if entering else None)
-
-                    # centre camera on door
-                    closest_door = None
-                    if entering:
-                        # find inner door
-                        world_pos = map(lambda x: util.round_down_to_multiple(x, constants.TILE_SIZE), world_pos)
-                        tup_world_pos = tuple(world_pos)
-                        for d in building.doors:
-                            if tuple(d[1]) == tup_world_pos:
-                                closest_door = d[0]
-                                break
-
-                    else:
-                        closest_door = building.get_closest_exit(world_pos)
-
-                    if closest_door is None:
-                        logging.warning("Could not find the %s door position" % "entrance" if entering else "exit")
-
-                    else:
-                        constants.SCREEN.camera.centre(closest_door)
-                        constants.STATEMANAGER.transfer_control(None)
-
-        # release controller
-        elif event.type == pygame.KEYDOWN and event.key == constants.Input.RELEASE_CONTROL:
-            constants.STATEMANAGER.transfer_control(None)
-        else:
-            State.handle_event(self, event)
-
     def on_load(self):
         constants.SCREEN.camera.update_boundaries(self.world)
-        State.on_load(self)
+        constants.SCREEN.camera.centre()
+
+    def tick(self):
+        for w in world_module.WORLDS:
+            w.tick(render=(w == self.world))
+        constants.STATEMANAGER.controller.tick()
+
+    def handle_event(self, event):
+        constants.STATEMANAGER.controller.handle_event(event)
 
 
 class OutsideWorldState(BaseGameState):
@@ -318,11 +263,11 @@ class OutsideWorldState(BaseGameState):
             w.renderer.initial_render()
 
         # add some humans
-        for _ in xrange(10):
+        for _ in xrange(5):
             Human(self.world)
 
         # add some vehicles
-        for _ in xrange(1):
+        for _ in xrange(5):
             Vehicle(self.world)
 
         # centre on a random entity
@@ -332,7 +277,7 @@ class OutsideWorldState(BaseGameState):
         pygame.mouse.set_pos(constants.WINDOW_CENTRE)
 
     def tick(self):
-        State.tick(self)
+        BaseGameState.tick(self)
 
         # todo temporary building action
         self.building_timer -= 1
@@ -348,6 +293,7 @@ class BuildingState(BaseGameState):
     """
     Gamestate for building interiors
     """
+
     def __init__(self, building):
         BaseGameState.__init__(self)
         self.building = building

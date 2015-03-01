@@ -1,5 +1,7 @@
 from collections import OrderedDict
+import logging
 import random
+import operator
 
 import pygame
 
@@ -7,6 +9,7 @@ import constants
 import entity
 import event
 import util
+import world as world_module
 
 
 class BaseController:
@@ -180,12 +183,111 @@ class InputController:
 
         return consumed
 
+    def handle_global_game_event(self, e):
+        """
+        Handles game events, such as selecting entities to control,
+                            clicking doors to navigate,
+                            entity interactions
+        :param e: pygame event
+        """
+        consumed = False
+        world = constants.STATEMANAGER.get_current().world
+
+        # mouse clicking to control an entity, or interact with a block
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            world_pos = util.intify(map(operator.add, e.pos, constants.SCREEN.camera.transform))
+
+            grid_cell = world.entity_grid.get_nearest_cell(world_pos)
+            closest = world.match_nearest_entity(world_pos, grid_cell, None, constants.TILE_SIZE_SQRD)
+
+            if closest:
+                should_control = True
+
+                # empty vehicles: no no
+                if closest.entitytype == constants.EntityType.VEHICLE:
+                    if closest.is_empty():
+                        should_control = False
+
+                # propogate control to vehicle if a passenger is selected
+                elif closest.entitytype == constants.EntityType.HUMAN:
+                    if closest.vehicle:
+                        closest = closest.vehicle
+
+                if should_control:
+                    consumed = True
+                    constants.STATEMANAGER.transfer_control(closest)
+
+            # block click
+            else:
+                # door block
+                door_block = world.get_door_block(*util.pixel_to_tile(world_pos))
+                if door_block:
+                    building = door_block.building
+                    entering = door_block.blocktype == world_module.BlockType.SLIDING_DOOR
+
+                    constants.STATEMANAGER.switch_to_building(building if entering else None)
+
+                    # centre camera on door
+                    closest_door = None
+                    if entering:
+                        # find inner door
+                        world_pos = map(lambda x: util.round_down_to_multiple(x, constants.TILE_SIZE), world_pos)
+                        tup_world_pos = tuple(world_pos)
+                        for d in building.doors:
+                            if tuple(d[1]) == tup_world_pos:
+                                closest_door = d[0]
+                                break
+
+                    else:
+                        closest_door = building.get_closest_exit(world_pos)
+
+                    if closest_door is None:
+                        logging.warning("Could not find the %s door position" % "entrance" if entering else "exit")
+
+                    else:
+                        constants.SCREEN.camera.centre(closest_door)
+                        constants.STATEMANAGER.transfer_control(None)
+
+        elif e.type == pygame.KEYDOWN:
+
+            # release controller
+            if e.key == constants.Input.RELEASE_CONTROL:
+                constants.STATEMANAGER.transfer_control(None)
+
+            # interactions
+            elif e.key == constants.Input.INTERACT:
+                control_entity = constants.STATEMANAGER.controller.entity
+                entitytype = control_entity.entitytype if control_entity else constants.EntityType.ALL
+
+                # humans
+                if entitytype == constants.EntityType.HUMAN:
+
+                    # entering vehicles
+                    vehicle_predicate = lambda v: v.entitytype == constants.EntityType.VEHICLE
+                    nearby = world.match_nearest_entity(control_entity.transform, control_entity.grid_cell, vehicle_predicate, constants.TILE_SIZE_SQRD)
+                    if nearby:
+                        consumed = True
+                        nearby.enter(control_entity)
+
+                # vehicles
+                elif entitytype == constants.EntityType.VEHICLE:
+                    # todo: get the last controlled entity, instead of first seat: use a stack of controlled entitise?
+                    # seat = entity.match_first_seat(lambda s: s == constants.STATEMANAGER.controller.entity)
+                    seat = control_entity.get_first_full_seat()
+                    if seat >= 0:
+                        consumed = True
+                        control_entity.exit(seat)
+        return consumed
+
     def handle_event(self, e):
         """
         Delegates the given event
         :param e: pygame event
         """
         if self.handle_global_event(e):
+            return
+
+        if self.handle_global_game_event(e):
             return
 
         if not self.current:
@@ -624,6 +726,10 @@ class VehicleController(BaseController):
 
                     if key_opposite == current_direction:
                         register = False
+
+                # there must be a driver
+                if register and not self.entity.driver:
+                    register = False
 
                 if register and key != last_top:
                     self._keystack.push(key)
