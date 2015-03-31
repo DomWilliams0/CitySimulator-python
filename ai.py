@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import logging
+from math import log
 import random
 import operator
 
@@ -364,15 +365,16 @@ class CameraController(GeneralEntityController):
 
     def __init__(self):
         GeneralEntityController.__init__(self, None, constants.Speed.CAMERA_MIN, constants.Speed.CAMERA_FAST, None)
-        self._drag = VehicleController.Pedal(0.3)
+        self.engine = _Engine(300, accelerate_rate=-1, brake_rate=2.5)
         self.border_thickness = 20
         self._was_moving = False
         self.screen_boundary = map(lambda x: x - self.border_thickness, constants.WINDOW_SIZE)
         self.entity = None
+        self.state = VehicleController.STOPPED
 
     def tick(self):
-        if self._drag.is_applied():
-            self.entity.velocity *= self._drag.get_force()
+        speed = self.engine.get_speed(self.state)
+        self.entity.velocity = self.entity.velocity.normalized() * speed
         self.entity.move_camera()
 
     def _mouse_border_to_direction(self, mouse_pos):
@@ -400,7 +402,7 @@ class CameraController(GeneralEntityController):
         return dx, dy
 
     def halt(self):
-        self._drag.set_applied(True, override=True)
+        self.state = VehicleController.BRAKING
         BaseController.halt(self)
 
     def handle_event(self, e):
@@ -431,7 +433,7 @@ class CameraController(GeneralEntityController):
         else:
             dragging = True
 
-        self._drag.set_applied(dragging)
+        self.state = VehicleController.BRAKING if dragging else VehicleController.ACCELERATING
 
 
 class HumanController(GeneralEntityController):
@@ -450,6 +452,158 @@ class HumanController(GeneralEntityController):
         self.halt()
 
 
+class _Engine:
+    class Graph:
+        ID = 0
+
+        def __init__(self):
+            self.values = []
+            self.index = 0
+            self.id = _Engine.Graph.ID
+            _Engine.Graph.ID += 1
+
+        def generate_values(self, func, time_step):
+            step_x = 0
+            running = True
+            self.values.append(0)
+            while running:
+                y = func(step_x)
+
+                if y >= 1:
+                    y = 1
+                    running = False
+
+                self.values.append(y)
+                step_x += time_step
+
+        def get(self):
+            return self.values[self.index]
+
+        def catch_up(self, other_graph):
+            self._catch_up_to_value(other_graph.get())
+
+        def _catch_up_to_value(self, value):
+            done = False
+            for i in xrange(len(self.values)):
+                v = self.values[i]
+                if v >= value:
+                    self.index = i
+                    done = True
+                    break
+
+            if not done:
+                self.index = 0
+
+        def slow(self, fraction):
+            self._catch_up_to_value(self.get() * fraction)
+
+        def __eq__(self, other):
+            return isinstance(other, _Engine.Graph) and other.id == self.id
+
+        def __hash__(self):
+            return self.id
+
+        def __len__(self):
+            return len(self.values)
+
+        def __getitem__(self, item):
+            return self.values[item]
+
+        def __repr__(self):
+            return "{%d}" % self.id
+
+    def __init__(self, max_speed, accelerate_rate=10., brake_rate=10.):
+        """
+        :param max_speed: Maximum speed of this engine
+        :param accelerate_rate: The acceleration rate: lower values = faster acceleration. Negative = instant
+        :param brake_rate: The braking rate: lower values = faster braking
+        """
+        self._state = VehicleController.STOPPED
+
+        self.max_speed = max_speed
+        self.min_speed = max_speed / 10
+        self.last_speed = 0
+
+        self._time_applied = 0
+
+        self.accelerate_graph = _Engine.Graph()
+        self.brake_graph = _Engine.Graph()
+        self._speeds = {VehicleController.ACCELERATING: (1, self.accelerate_graph),
+                        VehicleController.BRAKING: (-4, self.brake_graph),
+                        VehicleController.DRIFTING: (-2, self.brake_graph),
+                        VehicleController.STOPPED: (None, self.accelerate_graph)}
+
+        self.current_graph = self.accelerate_graph
+
+        # instant acceleration
+        if accelerate_rate < 0:
+            accelerate = lambda x: 1
+        else:
+            accelerate = lambda x: 1 + log((x / accelerate_rate) + 0.05) * 0.3
+
+        brake = lambda x: x / brake_rate
+
+        self._time_step = 0.25  # something to do with accelerate rate
+
+        self.accelerate_graph.generate_values(accelerate, self._time_step)
+        self.brake_graph.generate_values(brake, self._time_step)
+
+        """
+            use values for acceleration and maintain position between different accelerations
+            for braking, apply force from graph until 0 is reached, not limited to time
+
+            vehicle controller works out the state ie. accelerating drifting braking or stopped
+            passes to engine, which returns the force to multiply by max speed
+
+            accelerate:
+                follows accelerate speed curve and plateaus at max speed
+
+            drift:
+                follows drift curve back to 0
+
+            brake:
+                follow brake curve rapidly to 0
+
+            stopped:
+                returns 0
+
+
+            WHAT IF
+            generate a cubic graph for all speed
+            accelerating +3 until max speed
+            drifting -2 until 0
+            brake -5 until 0
+
+        """
+
+    def get_speed(self, state):
+        self._time_applied += constants.DELTA
+
+        if self._time_applied >= self._time_step:
+            self._time_applied = 0
+
+            index_delta, graph = self._speeds[state]
+            length = len(graph)
+
+            # changing speed values
+            if graph != self.current_graph:
+                graph.catch_up(self.current_graph)
+                self.current_graph = graph
+
+            # stopped, so index must be 0
+            if index_delta is None:
+                index = 0
+            else:
+                index = self.current_graph.index + index_delta
+
+            self.current_graph.index = util.clamp(index, 0, length - 1)
+
+        speed = self.current_graph.get() * self.max_speed
+        self.last_speed = speed
+
+        return speed
+
+
 class VehicleController(BaseController):
     """
     Controller for vehicles, keeping track of drift/brake/accelerating
@@ -459,97 +613,6 @@ class VehicleController(BaseController):
     DRIFTING = 2
     ACCELERATING = 3
 
-    class Pedal:
-        """
-        Framerate-independant application of force/braking
-        """
-
-        def __init__(self, brake_time, accelerating=False):
-            """
-            :param brake_time: Seconds to apply force over
-            :param accelerating: If True, values will converge to 1, otherwise 0 (to come to a halt)
-            """
-            self.brake_time = brake_time
-            self._was_applied = False
-            self._applied = False
-            self._gen = None
-            self.accelerating = accelerating
-            self._backup = None
-            if accelerating:
-                self._default_force = 1
-                self._variation = 1
-                self._func = lambda force, division, count: max(1, self._variation + (1 / ((count + 1) / 2.0)))
-            else:
-                self._default_force = 0
-                self._variation = 0.2
-                self._func = lambda force, division, count: force - division
-            self.current_force = 1
-
-        def is_applied(self):
-            """
-            :return: Is this pedal currently applied
-            """
-            return self._applied
-
-        def set_applied(self, applied, override=False, use_backup=False):
-            """
-            :param applied: New applied status of pedal
-            :param override: If True, forces the pedal to be applied as specified by 'applied',
-                            otherwise the pedal will keep its current state if 'applied' is equal to current state
-            """
-            self._was_applied = self._applied
-            self._applied = applied
-
-            if applied != self._was_applied or override:
-                # if use_backup:
-                # self._gen = self._backup
-
-                if applied:
-                    last_force = self.current_force
-
-                    self._gen = self._pedal_force_gen(self.brake_time)
-
-                    if use_backup:
-                        while self.current_force <= last_force:
-                            self.get_force()
-                else:
-                    self._backup = self._gen
-                    self._gen = None
-
-                if not use_backup:
-                    self.current_force = 1
-
-        def get_force(self):
-            """
-            :return: Float to multiply velocity by, to apply the pedal's force
-            """
-            return next(self._gen, 1)
-
-        def _pedal_force_gen(self, brake_time, tick_count=20):
-            """
-            :param brake_time: Seconds over which to reach final pedal force
-            :param tick_count: Number of intermediate values
-            :return: Generator for this pedal
-            """
-            division = self._variation / tick_count
-
-            time_passed = 0
-            step = float(brake_time) / tick_count
-            next_step = 0
-            count = 0
-
-            while time_passed <= brake_time:
-                time_passed += constants.DELTA
-                if time_passed >= next_step:
-                    count += 1
-                    next_step += step
-                    self.current_force = self._func(self.current_force, division, count)
-                    yield self.current_force
-                else:
-                    yield 1
-
-            yield self._default_force
-
     def __init__(self, vehicle):
         BaseController.__init__(self, vehicle)
         # todo: add new sub-behaviour to go towards a target, then use for path follower
@@ -558,25 +621,22 @@ class VehicleController(BaseController):
         self._keystack = util.Stack()
         self._lasttop = None
 
-        self.brake = VehicleController.Pedal(0.5)
-        self.drift_brake = VehicleController.Pedal(self.brake.brake_time * 2)
-        self.accelerator = VehicleController.Pedal(5, accelerating=True)
-        self.pedals = {VehicleController.BRAKING: self.brake, VehicleController.DRIFTING: self.drift_brake,
-                       VehicleController.ACCELERATING: self.accelerator}
-
         self._brake_key_pressed = False
         self.current_speed = 0
         self.acceleration = 1.03
-        self.max_speed = constants.Speed.VEHICLE_MAX * random.uniform(0.75, 1)
-        self.start_speed = constants.Speed.VEHICLE_MIN / 10
+
+        max_speed = constants.Speed.VEHICLE_MAX * random.uniform(0.75, 1)
+        self.engine = _Engine(max_speed, accelerate_rate=7, brake_rate=5)
 
         self.state = VehicleController.STOPPED
         self.last_key = None
         self.last_state = self.state
         self.last_directions = [0, 0]
+        self.last_pos = vehicle.transform.as_tuple()
+        self.last_direction = vehicle.direction
 
     def _get_speed(self):
-        return self.current_speed
+        return self.engine.last_speed
 
     def _get_direction(self, vertical):
 
@@ -601,29 +661,8 @@ class VehicleController(BaseController):
 
         return 0
 
-    def press_pedal(self, state, use_backup_gen=False):
-        """
-        Applies the pedal for the given VehicleController state
-        """
-        for s, pedal in self.pedals.items():
-            pedal.set_applied(s == state, use_backup=use_backup_gen)
-
-    def _get_applied_pedal_force(self):
-        """
-        :return: The currently pressed pedal's force, None if no pedals are applied
-        """
-        for p in self.pedals.values():
-            if p.is_applied():
-                return p.get_force()
-        return None
-
     def slow(self, speed_multiple):
-        """
-        Multiplies the current speed by the given value, then applies the accelerator to catch up to that speed again
-        """
-        self.current_speed *= speed_multiple
-        if self.state == VehicleController.ACCELERATING:
-            self.press_pedal(self.state)
+        self.engine.current_graph.slow(speed_multiple)
 
     def tick(self):
         # todo: only change direction to opposite if stopped, otherwise brake
@@ -631,7 +670,6 @@ class VehicleController(BaseController):
 
         # None if no key, BRAKE if brake is held down
         current = self._get_pressed_key()
-        stop_accelerator_abuse = False
 
         # braking while moving
         if current == constants.Input.BRAKE:
@@ -647,34 +685,39 @@ class VehicleController(BaseController):
         else:
             self.state = VehicleController.ACCELERATING
 
-            # first pressed accelerating
-            if self.current_speed == 0 and not self._brake_key_pressed:
-                self.current_speed = self.start_speed
+        # check for crashing
+        pos = self.entity.transform.as_tuple()
+        direction = self.entity.direction
 
-            elif self.last_state != self.state:
-                stop_accelerator_abuse = True
+        if direction == self.last_direction:
+            # adjust delta time
+            delta = constants.DELTA
+            if delta != constants.LAST_DELTA:
+                delta += constants.LAST_DELTA - constants.DELTA
+            speed = self.current_speed * delta
 
-            # todo slow on turning?
-            if self.last_key != current and self.current_speed > self.start_speed:
-                # self.current_speed *= 0.8
-                # self.accelerator.set_applied(True, True)
-                pass
+            # predict new position
+            expected_pos = util.add_direction(self.last_pos, direction, speed)
+            distance = util.distance_sqrd(pos, expected_pos)
+
+            # crash!
+            if distance > 0.1:
+                self.state = VehicleController.STOPPED
 
         # apply pedal force if moving
-        if self.state != VehicleController.STOPPED:
-            self.press_pedal(self.state, stop_accelerator_abuse)
-            force = self._get_applied_pedal_force()
-            if force is not None:
-                self.current_speed *= force
-
-            # limit to max speed
-            if self.current_speed > self.max_speed:
-                self.current_speed = self.max_speed
+        self.current_speed = self.engine.get_speed(self.state)
 
         self._move_entity()
         self.last_directions = self._get_direction(False), self._get_direction(True)
         self.last_key = current
         self.last_state = self.state
+        self.last_pos = pos
+        self.last_direction = direction
+
+        # debug
+        if self.entity.passengers:
+            constants.SCREEN.draw_string(util.get_enum_name(VehicleController, self.state), (5, 5), colour=(255, 255, 255))
+            constants.SCREEN.draw_string(str(self.current_speed), (5, 20), colour=(255, 255, 255))
 
         """
             pseudo
@@ -741,7 +784,6 @@ class VehicleController(BaseController):
 
         # brake
         elif key == constants.Input.BRAKE:
-            self.brake.set_applied(keydown)
             self._brake_key_pressed = keydown
 
     def _get_pressed_key(self):
@@ -754,11 +796,9 @@ class VehicleController(BaseController):
         self.entity.velocity.zero()
         self.current_speed = 0
         self.state = VehicleController.STOPPED
-        self.press_pedal(VehicleController.STOPPED)
 
     def on_control_end(self):
         self._keystack.clear()
-        self.press_pedal(VehicleController.DRIFTING)
 
 
 # behaviour tree goodness

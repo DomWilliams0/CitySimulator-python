@@ -406,17 +406,16 @@ class BaseWorld:
         else:
             self.tick_entities(*entity_tick_args)
 
-            # debug draw entity grid
+            # debug render collision rects
             # if render:
-            # if constants.STATEMANAGER.controller.entity:
-            #         for i in xrange(len(self.entity_grid.grid)):
-            #             for j in xrange(len(self.entity_grid.grid[i])):
-            #                 rect = util.Rect(j * self.entity_grid.cell_size, i * self.entity_grid.cell_size, self.entity_grid.cell_size, self.entity_grid.cell_size)
-            #                 constants.SCREEN.draw_rect(rect, filled=False)
+            # for x, y, r in self.iterate_blocks(layer="rects"):
+            #         if r:
+            #             constants.SCREEN.draw_rect(r, filled=False)
 
     def iterate_blocks(self, x1=0, y1=0, x2=-1, y2=-1, layer="terrain"):
         """
         Iterate through blocks in the given layer, optionally only in the specified area
+
         :return Generator for blocks in the given layer
         """
         if x2 < 0:
@@ -659,6 +658,8 @@ class BaseWorld:
             x = get_coord(street_start, "x")
             y = get_coord(street_start, "y")
             world.roadmap.begin_discovery((x, y))
+
+        # todo combine collision rects
 
         logging.debug("World loaded: [%s]" % filename)
         return world

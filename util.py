@@ -1,4 +1,4 @@
-from math import floor
+from math import floor, sqrt
 import os
 import random
 import operator
@@ -10,7 +10,7 @@ import constants
 import world as world_module
 
 
-SURROUNDING_OFFSETS = (0, -1), (-1, 0), (1, 0), (0, 1)
+SURROUNDING_OFFSETS = (0, -1), (-1, 0), (0, 1), (1, 0)
 SURROUNDING_DIAGONAL_OFFSETS = (0, 0), (-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)
 
 
@@ -136,6 +136,18 @@ def distance_sqrd(p1, p2):
     return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
 
 
+def distance(p1, p2):
+    return sqrt(distance_sqrd(p1, p2))
+
+
+def clamp(value, min_value, max_value):
+    if value < min_value:
+        value = min_value
+    elif value > max_value:
+        value = max_value
+    return value
+
+
 def mix_colours(c1, c2, ensure_alpha=True):
     """
     :param ensure_alpha: If True, ensures that the returned colour is RGBA
@@ -180,11 +192,11 @@ def find_difference(pos1, pos2, absolute):
         return diff
 
 
-def add_direction(position, direction):
+def add_direction(position, direction, distance_delta=1):
     """
     :return: Position modified by the given direction
     """
-    delta = SURROUNDING_OFFSETS[direction]
+    delta = map(lambda x: x * distance_delta, SURROUNDING_OFFSETS[direction])
     return map(operator.add, position, delta)
 
 

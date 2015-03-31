@@ -301,6 +301,9 @@ class VehicleAnimator(HumanAnimator):
     def turn(self, index, starting_index=0, speed=-1):
         try:
             hor = self._is_horizontal(index)
+
+            # adjust aabb
+            direction = self.entity.direction
             if hor != self.was_horizontal:
                 if hor:
                     self.entity.aabb.width *= 2
@@ -309,12 +312,13 @@ class VehicleAnimator(HumanAnimator):
                     self.entity.aabb.width /= 2
                     self.entity.rect.width /= 2
 
-                    # can be exploited to move super fast :(
-                    # if self.last_direction == constants.Direction.EAST:
-                    # self.entity.aabb.x += self.entity.aabb.width
+                if self.last_direction == constants.Direction.EAST:
+                    self.entity.aabb.x += self.entity.aabb.width
+                elif direction == constants.Direction.EAST:
+                    self.entity.aabb.x -= self.entity.aabb.width / 2
 
             self.was_horizontal = hor
-            self.last_direction = self.entity.direction
+            self.last_direction = direction
 
         except AttributeError:
             pass

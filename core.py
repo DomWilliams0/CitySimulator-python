@@ -18,6 +18,7 @@ class Game:
         """
         clock = pygame.time.Clock()
         while constants.RUNNING:
+            constants.LAST_DELTA = constants.DELTA
             constants.DELTA = (clock.tick(60) / 1000.0)
             current_state = constants.STATEMANAGER.get_current()
 

@@ -408,7 +408,7 @@ class Human(Entity):
         else:
             self.controller.suppress_ai(False)
 
-        # reenable collisions
+        # re-enable collisions
         self.world.entity_grid.set_enabled(self, True)
 
     def tick(self, render, block_input=False):
@@ -423,10 +423,8 @@ class Human(Entity):
 class Vehicle(Entity):
     def __init__(self, world, spritesheet=None):
         Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, clone_spritesheet=True, can_leave_world=False)
-        self.controller = ai.VehicleController(self)
 
         self.aabb.height /= 2
-
         self.animator.spritesheet.set_colour(self._random_colour())
 
         self.seats = [(None, None) for _ in xrange(2)]  # (entity, list of sprites)
@@ -434,6 +432,8 @@ class Vehicle(Entity):
 
         # todo should move to road spawn
         self.world.move_to_spawn(self, 0)
+
+        self.controller = ai.VehicleController(self)
 
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
@@ -450,9 +450,6 @@ class Vehicle(Entity):
         c.append(alpha)
         return c
 
-    def collides(self, other):
-        return self.rect.colliderect(other.rect)
-
     def resolve_human_collision(self, human):
         # no collisions with passengers
         if human in self.passengers:
@@ -463,7 +460,8 @@ class Vehicle(Entity):
         speed_factor = 1
         if speed > constants.Speed.VEHICLE_KILL ** 2:
             human.kill()
-            speed_factor = 0.7
+            speed_factor = 0.6
+            # todo depends on the mass of the vehicle
             # todo blood splatter
         elif speed > constants.Speed.VEHICLE_DAMAGE ** 2:
             # todo damage
@@ -562,7 +560,7 @@ class Vehicle(Entity):
     def render(self):
         Entity.render(self)
 
-        if self.passengers:
+        if False and self.passengers:
             # todo: only if direction changes: calculate on turn() and save as a field
             back_seat = True
             front_seat = True

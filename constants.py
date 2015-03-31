@@ -283,10 +283,6 @@ class Direction:
         :return: Opposite of given direction
         """
         return (direction + 2) % 4
-        # if direction in Direction.HORIZONTALS:
-        # return Direction.EAST if direction == Direction.WEST else Direction.WEST
-        # else:
-        # return Direction.SOUTH if direction == Direction.NORTH else Direction.NORTH
 
     @staticmethod
     def delta_to_direction(delta, vertical):
@@ -299,6 +295,10 @@ class Direction:
             return Direction.SOUTH if delta > 0 else Direction.NORTH
         else:
             return Direction.EAST if delta > 0 else Direction.WEST
+
+    @staticmethod
+    def is_negative(direction):
+        return direction == Direction.NORTH or direction == Direction.WEST
 
 
 class EntityType:
@@ -338,6 +338,7 @@ STATEMANAGER = None
 RUNNING = True
 SCREEN = GameScreen()
 DELTA = 0
+LAST_DELTA = 0
 WINDOW_SIZE = (640, 640)
 WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
 
