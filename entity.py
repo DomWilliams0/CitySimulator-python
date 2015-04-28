@@ -1,5 +1,6 @@
 import logging
 import random
+from xml.etree import ElementTree
 
 from pygame.sprite import Sprite
 from pygame.surface import Surface
@@ -9,6 +10,104 @@ import animation
 import constants
 import util
 from vec2d import Vec2d
+
+
+class EntityLoader:
+    TAGS = {}
+
+    @staticmethod
+    def _load(xmls):
+        """
+        :param xmls: (entity type, file name)
+        """
+
+        def recurse_tag(tag, dic):
+            def aux(tag, path):
+                text = tag.text.strip()
+                path.append(tag.tag)
+
+                if text:
+                    # inherit last value
+                    if text == '^':
+                        if not hasattr(aux, 'last_text'):
+                            raise StandardError("Could not inherit non-existant value for %s" % '.'.join(path))
+
+                        text = aux.last_text
+
+                    # set last value
+                    else:
+                        aux.last_text = text
+
+                    dic['_'.join(path)] = text
+
+                # has children
+                else:
+                    for child in tag:
+                        branch = path[:]
+                        aux(child, branch)
+
+            aux(tag, [])
+
+            # clean up
+            if hasattr(aux, 'last_text'):
+                del aux.last_text
+
+        for entitytype, xml in xmls:
+            path = util.get_relative_path(xml)
+            tree = ElementTree.parse(path)
+            EntityLoader.TAGS[entitytype] = []
+
+            for parent in tree.getroot().getchildren():
+                tags = {}
+                for tag in parent:
+                    tag_name = tag.tag
+                    text = tag.text.strip()
+
+                    # parent tag
+                    if not text:
+                        recurse_tag(tag, tags)
+                    else:
+                        tags[tag_name] = text
+
+                # remove name from tags
+                name = tags["name"]
+                del tags["name"]
+
+                spritesheet = tags.get("sprite")
+                if spritesheet:
+                    tags["sprite"] = animation.load(entitytype, util.get_resource_path(spritesheet))
+
+                EntityLoader.TAGS[entitytype].append((name, {k.replace("-", "_"): v for k, v in tags.items()}))
+
+    @staticmethod
+    def load_all():
+        EntityLoader._load(((constants.EntityType.HUMAN, "humans.xml"),
+                            (constants.EntityType.VEHICLE, "vehicles.xml")))
+
+
+def create_entity(world, entitytype, name=None):
+    # find class
+    if entitytype == constants.EntityType.HUMAN:
+        cls = Human
+    elif entitytype == constants.EntityType.VEHICLE:
+        cls = Vehicle
+    else:
+        raise StandardError("Unknown entity type given: %r" % entitytype)
+
+    # find tags
+    if name is None:
+        tags = random.choice(EntityLoader.TAGS[entitytype])[1]
+    else:
+        tags = None
+        for n, t in EntityLoader.TAGS[entitytype]:
+            if n == name:
+                tags = t
+                break
+        if not tags:
+            raise StandardError("Tags of name '%s' was not found" % name)
+
+    # create
+    return cls(world, **tags)
 
 
 class Entity(Sprite):
@@ -200,6 +299,16 @@ class Entity(Sprite):
         """
         return util.pixel_to_tile(self.transform)
 
+    def is_obstructed(self, direction=None, distance=0.25):
+        """
+        :param direction: The direction to check in: use None for current direction
+        :param distance: Number of tiles to check for obstruction
+        """
+        if direction is None:
+            direction = self.direction
+
+        return self.world.is_rect_blocked(self.aabb, direction, distance)
+
     def is_visible(self, boundaries):
         tile = self.get_current_tile()
         return boundaries[0] <= tile[0] <= boundaries[2] and boundaries[1] <= tile[1] <= boundaries[3]
@@ -223,7 +332,7 @@ class Entity(Sprite):
 
     def resolve_world_collision(self, block_rect):
         r = block_rect[0]  # strip the dimensions
-        if block_rect[1] != constants.DIMENSION:
+        if block_rect[1] != constants.TILE_DIMENSION:
             half_tile = block_rect[1][0] / 2, block_rect[1][1] / 2
         else:
             half_tile = constants.HALF_TILE_SIZE
@@ -329,13 +438,8 @@ class Entity(Sprite):
 
 
 class Human(Entity):
-    def __init__(self, world, spritesheet=None, spawn_index=0):
-        """
-        :param world: The world this Human should be added to
-        :param spritesheet Name of spritesheet: if None, a random spritesheet is chosen
-        :param spawn_index: The spawn at which the player will be spawned
-        """
-        Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=spritesheet, world_interactions=True)
+    def __init__(self, world, sprite):
+        Entity.__init__(self, (32, 32), world, constants.EntityType.HUMAN, spritesheet=sprite, world_interactions=True)
 
         self.controller = ai.HumanController(self)
         self.vehicle = None
@@ -349,7 +453,7 @@ class Human(Entity):
         self.aabb.height /= 2
         self.aabb.inflate(-6, 0)
 
-        self.world.move_to_spawn(self, spawn_index)
+        self.world.move_to_spawn(self, 0)
 
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
@@ -421,14 +525,27 @@ class Human(Entity):
 
 
 class Vehicle(Entity):
-    def __init__(self, world, spritesheet=None):
-        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=spritesheet, clone_spritesheet=True, can_leave_world=False)
+    def __init__(self, world, sprite, colour="random", seat_count=2,
+                 windows_vertical_front=None, windows_vertical_back=None,
+                 windows_horizontal_front_west=None, windows_horizontal_front_east=None,
+                 windows_horizontal_back_west=None, windows_horizontal_back_east=None):
+        Entity.__init__(self, (32, 32), world, constants.EntityType.VEHICLE, spritesheet=sprite, clone_spritesheet=True, can_leave_world=False)
 
         self.aabb.height /= 2
-        self.animator.spritesheet.set_colour(self._random_colour())
 
-        self.seats = [(None, None) for _ in xrange(2)]  # (entity, list of sprites)
+        if colour is None or colour == "random":
+            colour = self._random_colour()
+        else:
+            colour = util.rgb_from_string(colour)
+
+        self.animator.spritesheet.set_colour(colour)
+
+        self.seats = [(None, None) for _ in xrange(int(seat_count))]  # (entity, list of mini-sprites)
         self.passengers = {}
+
+        rectify = lambda w: util.Rect(w)
+        self.windows_front = map(rectify, (windows_vertical_front, windows_horizontal_front_west, windows_horizontal_front_east))
+        self.windows_back = map(rectify, (windows_vertical_back, windows_horizontal_back_west, windows_horizontal_back_east))
 
         # todo should move to road spawn
         self.world.move_to_spawn(self, 0)
@@ -438,7 +555,8 @@ class Vehicle(Entity):
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
 
-    def _random_colour(self, alpha=255):
+    @staticmethod
+    def _random_colour(alpha=255):
         """
         :return: A (hopefully) pretty random colour
         """
@@ -535,33 +653,34 @@ class Vehicle(Entity):
 
     def _render_seat(self, horizontal, front_seat):
         sprites = self.seats[0 if front_seat else 1][1]
-        tc = list(self.rect.topcenter)
-        tc[0] -= self.rect.width / 4
-        tc[1] += 1
-        delta = animation.HUMAN_DIMENSION[0] * constants.PASSENGER_SCALE
-
-        if not horizontal:
-            pos = tc[0] - delta * 0.25, tc[1]
-
-        else:
-            if self.direction == constants.Direction.WEST:
-                delta *= -1
-                tc[0] -= delta * 0.1
-
-            if not front_seat:
-                delta *= -1
-
-            pos = tc[0] + (delta * 0.3), tc[1]
-
         sprite = sprites[self.direction]
 
-        constants.SCREEN.draw_sprite_part(sprite, pos, (0, 0, sprite.get_width(), sprite.get_height() * 0.6))
+        reversed_hor = self.direction == constants.Direction.EAST
+
+        if reversed_hor:
+            window_index = 2
+        else:
+            window_index = 0 if not horizontal else 1
+
+        window_side = (self.windows_front if front_seat != reversed_hor and self.direction else self.windows_back)
+        window_rect = window_side[window_index]
+
+        offset = (abs(window_side[2].x - window_side[1].x), abs(window_side[2].y - window_side[1].y)) if reversed_hor else (0, 0)
+
+        pos_offset = (0, 0) if not reversed_hor else offset
+        pos = self.rect[0] + window_rect[0] + pos_offset[0], self.rect[1] + window_rect[1] + pos_offset[1] + (1 if self.animator.current_frame in (1, 2) else 0)
+
+        face_area = offset, window_rect.size()
+        constants.SCREEN.draw_sprite_from_pos(sprite, pos, face_area)
+
+        # dest: position to draw at, dimensions don't matter
+        # area: portion of source surface to drawn
 
     def render(self):
         Entity.render(self)
 
-        if False and self.passengers:
-            # todo: only if direction changes: calculate on turn() and save as a field
+        if self.passengers:
+            # todo: only if direction changes: calculate on turn() and save as an attribute
             back_seat = True
             front_seat = True
 
@@ -576,12 +695,3 @@ class Vehicle(Entity):
                 self._render_seat(horizontal, True)
             if back_seat and self.seats[1][0]:
                 self._render_seat(horizontal, False)
-
-        """
-            don't have transparent windows: draw the car in two separate parts
-            specify regions in car file (load a vehicle as xml? one tag is filepath, then offsets and rects etc)
-
-            draw the entire car (opaque the windows)
-            draw the passengers in the set rectangles for windows
-            redraw the transparent window over the top
-        """

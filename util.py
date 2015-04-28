@@ -4,6 +4,7 @@ import random
 import operator
 import re
 
+import pygame
 from pygame.rect import Rect as pygame_Rect
 
 import constants
@@ -148,15 +149,34 @@ def clamp(value, min_value, max_value):
     return value
 
 
-def mix_colours(c1, c2, ensure_alpha=True):
+def mix_colours(c1, c2, new_alpha=-1):
     """
-    :param ensure_alpha: If True, ensures that the returned colour is RGBA
     :return: Mix of the given 2 colours
     """
     mixed = [(a + b) / 2 for a, b in zip(c1, c2)]
-    if ensure_alpha and len(mixed) == 3:
+
+    # add alpha
+    if len(mixed) == 3:
         mixed.append(255)
+
+    if new_alpha > 0:
+        mixed[3] = new_alpha
+
     return mixed
+
+
+def rgb_from_string(s):
+    return [int(c.strip()) for c in s.split(",")]
+
+
+def blend_pixels(sprite, pixel_predicate, pixel_func):
+    pixels = pygame.PixelArray(sprite)
+    for x in xrange(sprite.get_width()):
+        for y in xrange(sprite.get_height()):
+            pix = sprite.unmap_rgb(pixels[x, y])
+            if pixel_predicate(pix):
+                pixels[x, y] = tuple(pixel_func(pix))
+    del pixels
 
 
 def modify_attr(obj, attribute, func):
@@ -223,6 +243,8 @@ class Rect:
                 self._init(r.x, r.y, r.width, r.height)
             elif isinstance(r, pygame_Rect):
                 self._init(*r)
+            elif isinstance(r, str):
+                self._init(*[int(x.strip()) for x in r.split(",")])
         else:
             raise TypeError("Invalid argument")
 
@@ -290,6 +312,10 @@ class Rect:
         self.width += x
         self.height += y
 
+    def translate(self, xy):
+        self.x += xy[0]
+        self.y += xy[1]
+
     def as_tuple(self):
         """
         :return: Tuple of x, y, width, height
@@ -301,6 +327,18 @@ class Rect:
         :return: Tuple of (x, y), (width, height)
         """
         return (self.x, self.y), (self.width, self.height)
+
+    def size(self):
+        """
+        :return: Tuple of (width, height)
+        """
+        return self.width, self.height
+
+    def position(self):
+        """
+        :return: Tuple of (x, y)
+        """
+        return self.x, self.y
 
     def _tuple_from_arg(self, arg):
         l = len(arg)

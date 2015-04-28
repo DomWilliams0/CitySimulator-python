@@ -1,5 +1,6 @@
 import logging
 import random
+import operator
 
 import pygame
 
@@ -28,6 +29,10 @@ class GameScreen:
 
         logging.basicConfig(level=logging.INFO)
 
+        # set icon
+        icon = pygame.image.load(util.get_resource_path("icon.png")).convert_alpha()
+        pygame.display.set_icon(icon)
+
     def set_camera_world(self, world):
         """
         Sets the main camera world
@@ -50,13 +55,13 @@ class GameScreen:
         dim = (rect[1][0], rect[1][1]) if len(rect) == 2 else (rect.width, rect.height)
         pygame.draw.rect(self._window, colour, (self.camera.apply_rect(rect), dim), 0 if filled else 2)
 
-    def draw_sprite(self, sprite, loc):
+    def draw_sprite(self, sprite, loc, area=None):
         """
         Draws a sprite at the given world position
         """
-        self._window.blit(sprite, self.camera.apply_rect(loc))
+        self._window.blit(sprite, self.camera.apply_rect(loc), area)
 
-    def draw_sprite_part(self, sprite, loc, area=None):
+    def draw_sprite_from_pos(self, sprite, loc, area=None):
         self._window.blit(sprite, self.camera.apply(loc), area)
 
     def draw_block(self, block, loc, surface=None):
@@ -106,11 +111,53 @@ class GameScreen:
         """
         self._window.blit(surface, pos, area)
 
+    def shake_camera(self, time=0.2, force=5):
+        if self.camera:
+            self.camera.shaker.shake(time, force)
+
 
 class Camera:
     """
     Allows viewport scrolling
     """
+
+    class Shaker:
+        def __init__(self, camera):
+            self.transform = camera.transform
+            self.active = False
+            self._gen = None
+
+        def shake(self, time, force):
+            if self.active:
+                return
+
+            self.active = True
+            self._gen = self._create_gen(force, time)
+
+        def _create_gen(self, force, time):
+            count = int(time / DELTA)
+            offsets = [(random.uniform(-force, force), random.uniform(-force, force)) for _ in xrange(count)]
+            camera_pos = self.transform.as_tuple()
+
+            for o in offsets:
+                time -= DELTA
+                if time < 0:
+                    break
+                yield map(operator.add, o, camera_pos)
+            yield camera_pos
+
+        def tick(self):
+            if not self.active:
+                return
+
+            pos = next(self._gen, 0)
+
+            if pos == 0:
+                self._gen = None
+                self.active = False
+
+            else:
+                self.transform.set(pos)
 
     def __init__(self, world, speed=2, target_entity=None):
         self.view_size = WINDOW_SIZE
@@ -119,6 +166,7 @@ class Camera:
         self.speed = speed
         self._target_entity = target_entity
         self._target_position = None
+        self.shaker = Camera.Shaker(self)
 
         self.world = None
         self.world_dimensions = None
@@ -129,6 +177,10 @@ class Camera:
         """
         Gradually centres the target on screen, without leaving the world boundaries
         """
+        if self.shaker.active:
+            self.shaker.tick()
+            return
+
         # update target position
         self._update_target_position()
 
@@ -344,8 +396,8 @@ WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
 
 TILESET_RESOLUTION = 16
 TILE_SIZE = 32
-DIMENSION = (TILE_SIZE, TILE_SIZE)
+TILE_DIMENSION = (TILE_SIZE, TILE_SIZE)
 TILE_SIZE_SQRD = TILE_SIZE ** 2
 HALF_TILE_SIZE = TILE_SIZE / 2, TILE_SIZE / 2
 
-PASSENGER_SCALE = 0.75
+PASSENGER_SCALE = 0.6

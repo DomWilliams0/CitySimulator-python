@@ -49,15 +49,13 @@ class Game:
         self.__dict__[key] = value
 
 
-def _centre_window():
-    """
-    Centres the window on the screen
-    """
+def _prepare_env():
+    # centre window
     os.environ['SDL_VIDEO_CENTERED'] = '1'
 
 
 if __name__ == '__main__':
-    _centre_window()
+    _prepare_env()
 
     pygame.init()
     Game().start()

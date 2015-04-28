@@ -23,5 +23,4 @@ assert util.add_direction(source_pos, Direction.SOUTH, distance) == [4, 7]
 assert util.add_direction(source_pos, Direction.WEST, distance) == [1, 4]
 assert util.add_direction(source_pos, Direction.EAST, distance) == [7, 4]
 
-
 print("All passed!")

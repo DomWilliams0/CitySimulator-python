@@ -5,9 +5,8 @@ import pygame
 
 import ai
 import event as event_module
-import animation
 import constants
-from entity import Human, Vehicle
+import entity
 import world as world_module
 import util
 
@@ -162,7 +161,7 @@ class StateManager:
         :param camera_centre Should the camera immediately centre on the new controlled entity
         """
 
-        if self.controller.entity == entity:
+        if self.is_controlling(entity):
             return
 
         self.controller.control(entity)
@@ -175,6 +174,9 @@ class StateManager:
         :return: The current state
         """
         return self._stack.top
+
+    def is_controlling(self, an_entity):
+        return self.controller.entity == an_entity
 
 
 class State:
@@ -248,8 +250,8 @@ class OutsideWorldState(BaseGameState):
         BaseGameState.__init__(self)
         self.building_timer = 0
 
-        # load spritesheets
-        animation.load_all()
+        # load entities
+        entity.EntityLoader.load_all()
 
         # load main world, with all buildings
         self.world = world_module.World.load_tmx("world.tmx")
@@ -264,11 +266,11 @@ class OutsideWorldState(BaseGameState):
 
         # add some humans
         for _ in xrange(5):
-            Human(self.world)
+            entity.create_entity(self.world, constants.EntityType.HUMAN)
 
         # add some vehicles
         for _ in xrange(5):
-            Vehicle(self.world)
+            entity.create_entity(self.world, constants.EntityType.VEHICLE)
 
         # centre on a random entity
         constants.SCREEN.camera.centre(random.choice(self.world.entity_buffer.keys()).transform)

@@ -313,15 +313,23 @@ class InputController:
                         for w in b.windows.keys():
                             b.set_window(w, random.random() < 0.5)
                 elif key == pygame.K_g:
-                    h = entity.Human(self.entity.world)
+                    h = entity.create_entity(self.entity.world, constants.EntityType.HUMAN)
                     h.move_entity(*self.entity.rect.center)
 
                 elif key == pygame.K_h:
-                    v = entity.Vehicle(self.entity.world)
+                    v = entity.create_entity(self.entity.world, constants.EntityType.VEHICLE)
                     v.move_entity(*self.entity.rect.center)
 
                 elif key == pygame.K_l:
                     print(self.entity.get_current_tile())
+
+                elif key == pygame.K_y:
+                    entity.EntityLoader.load_all()
+                    print("reloaded")
+
+                elif key == pygame.K_SEMICOLON:
+                    constants.SCREEN.shake_camera()
+
         except AttributeError:
             pass
 
@@ -531,6 +539,7 @@ class _Engine:
         self._speeds = {VehicleController.ACCELERATING: (1, self.accelerate_graph),
                         VehicleController.BRAKING: (-4, self.brake_graph),
                         VehicleController.DRIFTING: (-2, self.brake_graph),
+                        VehicleController.CRASHED: (None, self.accelerate_graph),
                         VehicleController.STOPPED: (None, self.accelerate_graph)}
 
         self.current_graph = self.accelerate_graph
@@ -543,38 +552,10 @@ class _Engine:
 
         brake = lambda x: x / brake_rate
 
-        self._time_step = 0.25  # something to do with accelerate rate
+        self._time_step = 0.25
 
         self.accelerate_graph.generate_values(accelerate, self._time_step)
         self.brake_graph.generate_values(brake, self._time_step)
-
-        """
-            use values for acceleration and maintain position between different accelerations
-            for braking, apply force from graph until 0 is reached, not limited to time
-
-            vehicle controller works out the state ie. accelerating drifting braking or stopped
-            passes to engine, which returns the force to multiply by max speed
-
-            accelerate:
-                follows accelerate speed curve and plateaus at max speed
-
-            drift:
-                follows drift curve back to 0
-
-            brake:
-                follow brake curve rapidly to 0
-
-            stopped:
-                returns 0
-
-
-            WHAT IF
-            generate a cubic graph for all speed
-            accelerating +3 until max speed
-            drifting -2 until 0
-            brake -5 until 0
-
-        """
 
     def get_speed(self, state):
         self._time_applied += constants.DELTA
@@ -612,6 +593,7 @@ class VehicleController(BaseController):
     BRAKING = 1
     DRIFTING = 2
     ACCELERATING = 3
+    CRASHED = 4
 
     def __init__(self, vehicle):
         BaseController.__init__(self, vehicle)
@@ -667,13 +649,12 @@ class VehicleController(BaseController):
     def tick(self):
         # todo: only change direction to opposite if stopped, otherwise brake
         BaseController.tick(self)
-
         # None if no key, BRAKE if brake is held down
         current = self._get_pressed_key()
 
         # braking while moving
         if current == constants.Input.BRAKE:
-            if self.state == VehicleController.ACCELERATING or self.state == VehicleController.DRIFTING:
+            if self.state != VehicleController.STOPPED and self.state != VehicleController.BRAKING:
                 self.state = VehicleController.BRAKING
 
         # key released while accelerating
@@ -683,13 +664,25 @@ class VehicleController(BaseController):
 
         # directional key is pressed
         else:
-            self.state = VehicleController.ACCELERATING
+            accelerate = True
+            if self.state == VehicleController.CRASHED:
+                # check for obstructions
+                new_direction = self._key_to_direction(current)
+                obstructed = self.entity.is_obstructed(new_direction)
+                accelerate = not obstructed
+
+            if accelerate:
+                self.state = VehicleController.ACCELERATING
+
+                # start with small boost
+                if self.last_state == VehicleController.STOPPED:
+                    self.engine.accelerate_graph.index += 1
 
         # check for crashing
         pos = self.entity.transform.as_tuple()
         direction = self.entity.direction
 
-        if direction == self.last_direction:
+        if direction == self.last_direction and self.state != VehicleController.CRASHED:
             # adjust delta time
             delta = constants.DELTA
             if delta != constants.LAST_DELTA:
@@ -701,8 +694,9 @@ class VehicleController(BaseController):
             distance = util.distance_sqrd(pos, expected_pos)
 
             # crash!
-            if distance > 0.1:
-                self.state = VehicleController.STOPPED
+            if distance > 0.5:
+                self.state = VehicleController.CRASHED
+                self.on_crash()
 
         # apply pedal force if moving
         self.current_speed = self.engine.get_speed(self.state)
@@ -715,36 +709,12 @@ class VehicleController(BaseController):
         self.last_direction = direction
 
         # debug
-        if self.entity.passengers:
-            constants.SCREEN.draw_string(util.get_enum_name(VehicleController, self.state), (5, 5), colour=(255, 255, 255))
-            constants.SCREEN.draw_string(str(self.current_speed), (5, 20), colour=(255, 255, 255))
-
-        """
-            pseudo
-            if brake key is held:
-                if accelerating or drifting:
-                    state = BRAKING
-                else
-                    state = STOPPED
-
-            else if no key is held:
-                if state is ACCELERATING:
-                    state = DRIFTING
-
-            else movement key is held
-                state = ACCELERATING regardless
-
-            THEN:
-
-            switch state:
-                BRAKING: apply brake
-                ACCELERATING: apply acceleration, clamp speed
-                DRIFTING: apply drag
-                STOPPED: nothing
-        """
+        # if constants.STATEMANAGER.is_controlling(self.entity):
+        # constants.SCREEN.draw_string(util.get_enum_name(VehicleController, self.state), (5, 5), colour=(255, 255, 255))
+        #     constants.SCREEN.draw_string(str(self.current_speed), (5, 20), colour=(255, 255, 255))
 
     def _move_entity(self):
-        if self.state != VehicleController.ACCELERATING and self.state != VehicleController.STOPPED and self._has_virtually_stopped():
+        if self.state not in (VehicleController.ACCELERATING, VehicleController.STOPPED, VehicleController.CRASHED) and self._has_virtually_stopped():
             self.halt()
         else:
             BaseController._move_entity(self)
@@ -794,11 +764,16 @@ class VehicleController(BaseController):
 
     def halt(self):
         self.entity.velocity.zero()
+        self.entity.animator.halt()
         self.current_speed = 0
         self.state = VehicleController.STOPPED
 
     def on_control_end(self):
         self._keystack.clear()
+
+    def on_crash(self):
+        if self.current_speed > constants.Speed.VEHICLE_MIN * 0.75 and constants.STATEMANAGER.is_controlling(self.entity):
+            constants.SCREEN.shake_camera()  # todo shake more depending on the speed
 
 
 # behaviour tree goodness
@@ -1132,7 +1107,7 @@ class EntityWander(EntityLeafTask):
                 direction = constants.Direction.random()
 
                 # if self.no_obstacle.process() == Task.FAILURE:
-                if self.entity.world.is_direction_blocked(self.entity.get_current_tile(), direction):
+                if self.entity.world.is_point_blocked(self.entity.get_current_tile(), direction):
                     direction = constants.Direction.opposite(direction)
 
                 self.controller.move_in_direction(direction)

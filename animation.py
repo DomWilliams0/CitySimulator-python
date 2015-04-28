@@ -129,27 +129,15 @@ def get_random(animation_type=None):
     return None
 
 
-def load_all():
-    """
-    Loads all spritesheets in the sprites directory
-    """
-    # raise NotImplementedError("Load them manually now, learn to glob another day")
-    import os
+def load(entitytype, filepath):
+    if entitytype == constants.EntityType.HUMAN:
+        HumanSpriteSheet(filepath, (128, 128), HUMAN_DIMENSION, 4)
 
-    for root, dirs, files in os.walk(util.get_relative_path("sprites")):
-        d = root.split(os.sep)[-1]
-        for f in files:
-            if f[-3:] != "png":
-                continue
-            path = os.path.join(root, f)
+    elif entitytype == constants.EntityType.VEHICLE:
+        VehicleSpriteSheet(filepath, (128, 128), HUMAN_DIMENSION, VEHICLE_DIMENSION, 4)
 
-            # humans
-            if d == "humans":
-                HumanSpriteSheet(path, (128, 128), HUMAN_DIMENSION, 4)
-
-            if d == "vehicles":
-                VehicleSpriteSheet(path, (128, 128), HUMAN_DIMENSION, VEHICLE_DIMENSION, 4)
-    logging.info("Loaded %d sprites" % len(BaseSpriteSheet.LOADED))
+    else:
+        raise IOError("Could not load spritesheet at '%s'" % filepath)
 
 
 class HumanSpriteSheet(BaseSpriteSheet):
@@ -170,7 +158,10 @@ class HumanSpriteSheet(BaseSpriteSheet):
         def scale_dimensions(surface, scale):
             return int(surface.get_width() * scale), int(surface.get_height() * scale)
 
+        blue = (51, 148, 213)
         self.small_freeze_frames = [pygame.transform.scale(s[0], scale_dimensions(s[0], constants.PASSENGER_SCALE)) for s in self.sprites]
+        for s in self.small_freeze_frames:
+            util.blend_pixels(s, lambda p: p[3] > 0, lambda p: util.mix_colours(p, blue))
 
 
 class VehicleSpriteSheet(BaseSpriteSheet):
@@ -197,13 +188,7 @@ class VehicleSpriteSheet(BaseSpriteSheet):
         """
         for seq in self.sprites:
             for sprite in seq:
-                pixels = pygame.PixelArray(sprite)
-                for x in xrange(sprite.get_width()):
-                    for y in xrange(sprite.get_height()):
-                        pix = sprite.unmap_rgb(pixels[x, y])
-                        if all(map(lambda p: p == 127, pix[:3])):
-                            mixed = (util.mix_colours([pix[3]] * 3, colour))
-                            pixels[x, y] = sprite.map_rgb(mixed)
+                util.blend_pixels(sprite, lambda p: all(map(lambda p: p == 127, p[:3])), lambda p: util.mix_colours([p[3]] * 3, colour))
 
 
 class HumanAnimator:
@@ -270,10 +255,14 @@ class HumanAnimator:
         """
         Updates animation generator
         :param index: Sequence index ie Entity.{1}
-        :param starting_index: Starting frame in sequence, can be -1 for current frame
+        :param starting_index: Starting frame in sequence
         """
         self.sequence_index = index
         self.walk_gen = self.spritesheet.get_sequence(self, index, starting_index)
+        # self.current_frame = starting_index
+
+    def halt(self):
+        self.current_frame = 0
 
     def get_arrow_position(self):
         """

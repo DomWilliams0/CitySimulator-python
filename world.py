@@ -66,7 +66,7 @@ class WorldRenderer:
             for name, l in rlayer.layers:
                 for x, y, block in w.iterate_blocks(0, 0, w.tile_width, w.tile_height, name):
                     if block:
-                        constants.SCREEN.draw_block(block, (util.tile_to_pixel((x, y)), constants.DIMENSION), surface=rlayer.surface)
+                        constants.SCREEN.draw_block(block, (util.tile_to_pixel((x, y)), constants.TILE_DIMENSION), surface=rlayer.surface)
 
     def render_sandwich(self, sandwiched_draw_function, args):
         """
@@ -84,7 +84,7 @@ class WorldRenderer:
         :param world_layer: World layer to render to
         """
         rlayer = self._find_rlayer(world_layer)
-        constants.SCREEN.draw_block(block, (util.tile_to_pixel(pos), constants.DIMENSION), surface=rlayer.surface)
+        constants.SCREEN.draw_block(block, (util.tile_to_pixel(pos), constants.TILE_DIMENSION), surface=rlayer.surface)
 
     def _find_rlayer(self, wlayer):
         """
@@ -261,7 +261,7 @@ class BaseWorld:
         self.layers[layer][y][x] = block
 
         if BlockType.is_interactable(block.blocktype):
-            self.interact_rects.append((util.tile_to_pixel((x, y)), constants.DIMENSION))
+            self.interact_rects.append((util.tile_to_pixel((x, y)), constants.TILE_DIMENSION))
 
         if overwrite_collisions:
             if not self.layers[layer].draw_above and BlockType.is_collidable(block.blocktype):
@@ -409,7 +409,7 @@ class BaseWorld:
             # debug render collision rects
             # if render:
             # for x, y, r in self.iterate_blocks(layer="rects"):
-            #         if r:
+            # if r:
             #             constants.SCREEN.draw_rect(r, filled=False)
 
     def iterate_blocks(self, x1=0, y1=0, x2=-1, y2=-1, layer="terrain"):
@@ -456,16 +456,30 @@ class BaseWorld:
         """
         return 0 <= tilex < self.tile_width and 0 <= tiley < self.tile_height
 
-    def is_direction_blocked(self, tile_position, direction):
+    def is_point_blocked(self, tile_position, direction, distance=1):
         """
         :return: Whether there is a solid block blocking the way of the given position in the given direction
         """
-        next_tile = util.add_direction(tile_position, direction)
+        next_tile = util.add_direction(tile_position, direction, distance)
         if not self.is_in_range(*next_tile):
             return True
 
         block = self.get_solid_block(*util.intify(next_tile))
         return bool(block)
+
+    def is_rect_blocked(self, rect, direction, distance):
+        """
+        :param distance: Distance in terms of tile spans
+        :return: False if not blocked, otherwise a list of blocks that it collides with
+        """
+        moved_rect = util.Rect(rect)
+        pos = util.add_direction(moved_rect.position(), direction, distance * constants.TILE_SIZE)
+        moved_rect.x, moved_rect.y = pos
+
+        collisions = self.get_colliding_blocks(moved_rect)
+        if not collisions:
+            return False
+        return collisions
 
     def get_surrounding_blocks(self, pos, layer="terrain"):
         """
@@ -1215,11 +1229,11 @@ class _BlockHelper:
                 continue
 
             # blit and scale block sprite to tile size
-            surface = pygame.Surface(constants.DIMENSION).convert_alpha()
+            surface = pygame.Surface(constants.TILE_DIMENSION).convert_alpha()
             temp_tile = pygame.Surface((constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION), 0, tileset_surface)
             temp_tile.blit(tileset_surface, (0, 0), rect.as_tuple())
 
-            pygame.transform.scale(temp_tile, constants.DIMENSION, surface)
+            pygame.transform.scale(temp_tile, constants.TILE_DIMENSION, surface)
 
             self.register_block(blocktype, surface)
 
@@ -1256,7 +1270,7 @@ class _BlockHelper:
         :return: The collision rectangle of the given block (for custom collision box sizes)
         """
         offset = (0, 0)
-        rect = constants.DIMENSION
+        rect = constants.TILE_DIMENSION
         blockid, rot, hor, ver = self.get_rotation(block.render_id)
 
         # todo register modifications in a dictionary, to avoid if if if for other blocktypes
