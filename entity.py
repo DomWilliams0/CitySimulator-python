@@ -30,7 +30,7 @@ class EntityLoader:
                     # inherit last value
                     if text == '^':
                         if not hasattr(aux, 'last_text'):
-                            raise StandardError("Could not inherit non-existant value for %s" % '.'.join(path))
+                            raise StandardError("Could not inherit non-existent value for %s" % '.'.join(path))
 
                         text = aux.last_text
 
@@ -274,6 +274,7 @@ class Entity(Sprite):
     def turn(self, direction):
         """
         Updates compass direction of Human and animator
+
         :param direction: New direction
         """
         self.direction = direction
@@ -534,7 +535,7 @@ class Vehicle(Entity):
         self.aabb.height /= 2
 
         if colour is None or colour == "random":
-            colour = self._random_colour()
+            colour = util.random_colour()
         else:
             colour = util.rgb_from_string(colour)
 
@@ -554,19 +555,6 @@ class Vehicle(Entity):
 
     def catchup_aab(self):
         self.rect.center = self.aabb.midtop
-
-    @staticmethod
-    def _random_colour(alpha=255):
-        """
-        :return: A (hopefully) pretty random colour
-        """
-        high = random.randrange(127) + 127
-        med = random.randrange(100) + 50
-        low = random.randrange(50)
-        c = [high, med, low]
-        random.shuffle(c)
-        c.append(alpha)
-        return c
 
     def resolve_human_collision(self, human):
         # no collisions with passengers
@@ -596,7 +584,7 @@ class Vehicle(Entity):
 
     def enter(self, human):
         """
-        :return Whether or not the entering was successful
+        :return: Whether or not the entering was successful
         """
         free_seat = self.get_first_free_seat()
         if free_seat < 0:
@@ -684,7 +672,7 @@ class Vehicle(Entity):
             back_seat = True
             front_seat = True
 
-            horizontal = self.direction in constants.Direction.HORIZONTALS
+            horizontal = constants.Direction.is_horizontal(self.direction)
             if not horizontal:
                 if self.direction == constants.Direction.SOUTH:
                     back_seat = False

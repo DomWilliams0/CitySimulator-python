@@ -149,6 +149,19 @@ def clamp(value, min_value, max_value):
     return value
 
 
+def random_colour(alpha=255):
+    """
+    :return: A (hopefully) pretty random colour
+    """
+    high = random.randrange(127) + 127
+    med = random.randrange(100) + 50
+    low = random.randrange(50)
+    c = [high, med, low]
+    random.shuffle(c)
+    c.append(alpha)
+    return c
+
+
 def mix_colours(c1, c2, new_alpha=-1):
     """
     :return: Mix of the given 2 colours
@@ -182,6 +195,7 @@ def blend_pixels(sprite, pixel_predicate, pixel_func):
 def modify_attr(obj, attribute, func):
     """
     Modify current value of given attribute (ie +=)
+
     :param obj: Object
     :param attribute: Attribute name
     :param func: Function with single argument: old value of attribute
@@ -202,7 +216,6 @@ def get_enum_name(enum_cls, value):
 
 def find_difference(pos1, pos2, absolute):
     """
-    :param absolute:
     :return: If absolute, sorted absolute difference [0, 1] for example, otherwise the raw difference
     """
     diff = map(operator.sub, pos1, pos2)
@@ -293,6 +306,13 @@ class Rect:
     def __len__(self):
         return 4
 
+    def __nonzero__(self):
+        return self.as_tuple() != (0, 0, 0, 0)
+
+    def __iter__(self):
+        for a in xrange(len(self)):
+            yield self[a]
+
     def colliderect(self, r):
         r = self._tuple_from_arg(r)
         return self.x + self.width > r[0] and r[0] + r[2] > self.x and self.y + self.height > r[1] and r[1] + r[3] > self.y
@@ -311,10 +331,39 @@ class Rect:
         self.y -= y / 2
         self.width += x
         self.height += y
+        return self
+
+    def expand(self, direction, delta):
+        negative = constants.Direction.is_negative(direction)
+        horizontal = constants.Direction.is_horizontal(direction)
+
+        attr = 'width' if horizontal else 'height'
+
+        modify_attr(self, attr, lambda old: old + delta)
+
+        if negative:
+            shift = 'x' if horizontal else 'y'
+            modify_attr(self, shift, lambda old: old - delta)
+        return self
+
+    def to_pixel(self):
+        self.x *= constants.TILE_SIZE
+        self.y *= constants.TILE_SIZE
+        self.width *= constants.TILE_SIZE
+        self.height *= constants.TILE_SIZE
+        return self
+
+    def to_tile(self):
+        self.x /= constants.TILE_SIZE
+        self.y /= constants.TILE_SIZE
+        self.width /= constants.TILE_SIZE
+        self.height /= constants.TILE_SIZE
+        return self
 
     def translate(self, xy):
         self.x += xy[0]
         self.y += xy[1]
+        return self
 
     def as_tuple(self):
         """
@@ -418,7 +467,7 @@ class Stack:
 
 class TimeTicker:
     """
-    Ticks independantly of framerate
+    Ticks independently of framerate
     """
 
     def __init__(self, limit_or_range_range):

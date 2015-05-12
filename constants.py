@@ -36,6 +36,7 @@ class GameScreen:
     def set_camera_world(self, world):
         """
         Sets the main camera world
+
         :param world: The world to be tracked by the camera
         """
         self.camera = Camera(world)
@@ -100,6 +101,7 @@ class GameScreen:
     def draw_string(self, string, pos, colour=(255, 0, 0), absolute=True):
         """
         Draws the given string to the screen
+
         :param absolute: If False, it is drawn in the world, otherwise on the screen
         """
         surface = self.font.render(string, 1, colour)
@@ -225,7 +227,8 @@ class Camera:
     def centre(self, target_position=None):
         """
         Centres the target position immediately
-        :param target_position If None, then the current target
+
+        :param target_position: If None, then the current target
         """
 
         if not target_position:
@@ -249,8 +252,10 @@ class Camera:
     def apply_rect(self, rect):
         """
         Applies camera offset to a rectangle
-        :param rect Either a util.Rect or a tuple ((x, y), (w, h))
+
+        :param rect: The rectangle to draw
         """
+        # :param rect: Either a util.Rect or a tuple ((x, y), (w, h))
         if not isinstance(rect, util.Rect):
             rect = rect[0]
         else:
@@ -319,8 +324,6 @@ class Direction:
     EAST = 3
 
     VALUES = [NORTH, WEST, SOUTH, EAST]
-    HORIZONTALS = {EAST, WEST}
-    VERTICALS = {NORTH, SOUTH}
 
     @staticmethod
     def random():
@@ -337,11 +340,27 @@ class Direction:
         return (direction + 2) % 4
 
     @staticmethod
+    def are_perpendicular(d1, d2):
+        return abs(d1 - d2) % 2 != 0
+
+    @staticmethod
+    def perpendiculars(direction):
+        yield (direction - 1) % 4
+        yield (direction + 1) % 4
+
+    @staticmethod
+    def is_horizontal(direction):
+        return direction in (Direction.EAST, Direction.WEST)
+
+    @staticmethod
+    def is_vertical(direction):
+        return direction in (Direction.NORTH, Direction.SOUTH)
+
+    @staticmethod
     def delta_to_direction(delta, vertical):
         """
         :param delta: integer
         :param vertical: True if in y axis, otherwise False
-        :return:
         """
         if vertical:
             return Direction.SOUTH if delta > 0 else Direction.NORTH

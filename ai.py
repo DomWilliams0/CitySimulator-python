@@ -64,6 +64,7 @@ class BaseController:
     def handle(self, keydown, key):
         """
         Handle a key event
+
         :param keydown: True if keydown, False if keyup
         :param key: Keycode
         """
@@ -93,7 +94,7 @@ class BaseController:
 
     def _get_direction(self, vertical):
         """
-        :param vertical: True ff north/south, False if otherwise
+        :param vertical: True if north/south, False if otherwise
         :return: 0 if 2 conflicting inputs in one direction, otherwise 1 or -1 depending on the direction
         """
         n = self.wasd[constants.Input.DIRECTIONAL_KEYS[constants.Direction.NORTH if vertical else constants.Direction.WEST]]
@@ -149,6 +150,7 @@ class InputController:
     def control(self, the_entity):
         """
         Transfers control to the given entity
+
         :param the_entity: If None, returns control to the camera
         """
         if self.current:
@@ -174,7 +176,7 @@ class InputController:
 
     def handle_global_event(self, e):
         """
-        Handles events that are independant of current state/control, such as pausing/quitting the game
+        Handles events that are independent of current state/control, such as pausing/quitting the game
         :return: True if the event has been consumed, and hence should not be processed any further, otherwise False
         """
         consumed = False
@@ -209,7 +211,7 @@ class InputController:
                     if closest.is_empty():
                         should_control = False
 
-                # propogate control to vehicle if a passenger is selected
+                # propagate control to vehicle if a passenger is selected
                 elif closest.entitytype == constants.EntityType.HUMAN:
                     if closest.vehicle:
                         closest = closest.vehicle
@@ -272,7 +274,7 @@ class InputController:
 
                 # vehicles
                 elif entitytype == constants.EntityType.VEHICLE:
-                    # todo: get the last controlled entity, instead of first seat: use a stack of controlled entitise?
+                    # todo: get the last controlled entity, instead of first seat: use a stack of controlled entities?
                     # seat = entity.match_first_seat(lambda s: s == constants.STATEMANAGER.controller.entity)
                     seat = control_entity.get_first_full_seat()
                     if seat >= 0:
@@ -283,6 +285,7 @@ class InputController:
     def handle_event(self, e):
         """
         Delegates the given event
+
         :param e: pygame event
         """
         if self.handle_global_event(e):
@@ -342,7 +345,7 @@ class GeneralEntityController(BaseController):
     def __init__(self, the_entity, min_speed, fast_speed, max_speed_or_random):
         """
         :param max_speed_or_random: If None, then normal speed and sprint speed are set to min_speed and fast_speed respectively.
-                                    Otherwise, normal speed is randomly selected beteween min_speed and fast_speed, and
+                                    Otherwise, normal speed is randomly selected between min_speed and fast_speed, and
                                     sprint speed is randomly selected between normal speed and max_speed
         """
 
@@ -388,6 +391,7 @@ class CameraController(GeneralEntityController):
     def _mouse_border_to_direction(self, mouse_pos):
         """
         Returns a (x, y) direction, indicating how close to the border the mouse is
+
         :param mouse_pos: Current mouse position
         :return: A direction (eg. (5, 0)) for the camera to move if the mouse is near the border, otherwise (0, 0)
         """
@@ -453,8 +457,8 @@ class HumanController(GeneralEntityController):
         GeneralEntityController.__init__(self, the_entity, constants.Speed.HUMAN_MIN, constants.Speed.HUMAN_FAST, constants.Speed.HUMAN_MAX)
 
         # walk = EntityMoveToLocation(self, (random.randrange(13, 19), random.randrange(6, 12)))
-        # debug = DebugPrint("I, %r, am hearby debugged" % hex(id(self.entity)))
-        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self)))
+        # debug = DebugPrint("I, %r, am hereby debugged" % hex(id(self.entity)))
+        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self, move=False)))
 
     def on_control_start(self):
         self.halt()
@@ -697,6 +701,7 @@ class VehicleController(BaseController):
             if distance > 0.5:
                 self.state = VehicleController.CRASHED
                 self.on_crash()
+                self.current_speed = 0
 
         # apply pedal force if moving
         self.current_speed = self.engine.get_speed(self.state)
@@ -711,7 +716,7 @@ class VehicleController(BaseController):
         # debug
         # if constants.STATEMANAGER.is_controlling(self.entity):
         # constants.SCREEN.draw_string(util.get_enum_name(VehicleController, self.state), (5, 5), colour=(255, 255, 255))
-        #     constants.SCREEN.draw_string(str(self.current_speed), (5, 20), colour=(255, 255, 255))
+        # constants.SCREEN.draw_string(str(self.current_speed), (5, 20), colour=(255, 255, 255))
 
     def _move_entity(self):
         if self.state not in (VehicleController.ACCELERATING, VehicleController.STOPPED, VehicleController.CRASHED) and self._has_virtually_stopped():
@@ -776,6 +781,162 @@ class VehicleController(BaseController):
             constants.SCREEN.shake_camera()  # todo shake more depending on the speed
 
 
+class NavigationGraph:
+    OUT_OF_RANGE = 100
+    WRONG_BLOCK_TYPE = 101
+
+    class Node:
+        def __init__(self, tile_pos):
+            self.tile_pos = tile_pos
+            self.children = []
+
+    def __init__(self, the_world):
+        assert isinstance(the_world, world_module.World)  # just for pavement
+
+        self.world = the_world
+        self.nodes = []
+        self.rects = []
+
+    def _valid(self, pos, blocktype):
+        """
+        :return:    -1 = wrong block
+                     0 = invalid block
+                     1 = valid
+        """
+        # out of world
+        if not self.world.is_in_range(*pos):
+            return NavigationGraph.OUT_OF_RANGE
+
+        block = self.world.get_block(*pos)
+
+        # wrong blocktype
+        if block.blocktype != blocktype:
+            return NavigationGraph.WRONG_BLOCK_TYPE
+
+        return True
+
+    def _find_valid_directions(self, tile_pos, blocktype, span_width):
+        directions = []
+
+        # find span
+        for direction in constants.Direction.VALUES:
+            next_tile = tile_pos
+
+            valid_direction = True
+            for i in xrange(1, span_width):
+                next_tile = util.add_direction(next_tile, direction)
+
+                # check each tile in the direction
+                if self._valid(next_tile, blocktype) is not True:
+                    valid_direction = False
+                    break
+
+            if valid_direction:
+                # check next
+                peek_ahead = util.add_direction(next_tile, direction)
+
+                # valid direction only if different block
+                # if self._valid(peek_ahead, blocktype) == NavigationGraph.WRONG_BLOCK_TYPE:
+                if self._valid(peek_ahead, blocktype) != NavigationGraph.OUT_OF_RANGE:
+                    directions.append(direction)
+        return directions
+
+    def _explore(self, tile_pos, blocktype, length_direction, span_direction, span_width):
+        # probing time
+        current_pos = tile_pos
+        tile_count = 0
+        probing = True
+
+        while probing:
+            # move along
+            current_pos = util.add_direction(current_pos, length_direction)
+
+            # already visited
+            # if self._is_visited(current_pos):
+            # break
+
+            # check whole span
+            for delta in xrange(span_width):
+                next_pos = util.add_direction(current_pos, span_direction, delta)
+
+                if self._valid(next_pos, blocktype) is not True:
+                    probing = False
+                    break
+
+            tile_count += 1
+
+        # failure
+        if tile_count <= span_width:
+            return None
+
+        # create rectangle
+        rect = util.Rect(tile_pos, (0, 0))
+        rect.expand(span_direction, span_width)
+        rect.expand(length_direction, tile_count)
+
+        return rect
+
+    def _is_visited(self, pos):
+        pixel_pos = util.tile_to_pixel(pos)
+        for r, _ in self.rects:
+            if r.collidepoint(pixel_pos):
+                return True
+        return False
+
+    def generate_graph(self):
+        """
+            better idea:
+            use technique similar to roadmap, by travelling along with a row/line of tiles 2 wide (but abstract line into class)
+            for every pavement in the world:
+                check not visited already
+                scroll along in every direction until we come across a non-pavement
+                    if a tile is already visited, keep going anyway
+                    set each tile to visited
+                add a node at the beginning and end of this rectangle
+
+        """
+
+        blocktype = world_module.BlockType.PAVEMENT
+        span_width = 2
+
+        for x, y, b in self.world.iterate_blocks():
+            if b.blocktype != blocktype:
+                continue
+
+            pos = (x, y)
+
+            # already visited
+            if self._is_visited(pos):
+                continue
+
+            # find road span direction
+            spans = self._find_valid_directions(pos, blocktype, span_width)
+
+            if not spans:
+                continue
+
+            for span in spans:
+                for direction in constants.Direction.perpendiculars(span):
+                    outline = self._explore(pos, blocktype, direction, span, span_width)
+
+                    if not outline:
+                        continue
+
+                    # success
+                    print(outline)
+                    self.rects.append((outline.to_pixel(), util.random_colour()))
+
+        print(len(self.rects))
+
+    def debug_render(self):
+        for n in self.nodes:
+            pos = util.tile_to_pixel(n.tile_pos)
+            constants.SCREEN.draw_rect(util.Rect(pos, constants.TILE_DIMENSION), filled=False, colour=(100, 10, 10, 50))
+
+        for r, c in self.rects:
+            constants.SCREEN.draw_rect(r, colour=c, filled=False)
+
+
 # behaviour tree goodness
 class BehaviourTree:
     """
@@ -805,7 +966,7 @@ class BehaviourTree:
 
     def tick(self):
         # todo: don't traverse the tree each frame
-        # todo: INTERUPTIONS?!
+        # todo: INTERRUPTIONS?!
         self.current.process()
 
 
@@ -901,7 +1062,7 @@ class Sequence(Composite):
                 self.children_stack.top.init()
                 return Task.RUNNING
 
-        # either running or failure: propogate this state up to the parent
+        # either running or failure: propagate this state up to the parent
         else:
             return state
 
@@ -925,7 +1086,7 @@ class Selector(Composite):
             # start new child
             self.children_stack.top.init()
 
-        # either success or running: propogate to parent
+        # either success or running: propagate to parent
         else:
             return state
 
@@ -1088,13 +1249,13 @@ class EntityMoveToLocation(EntityLeafTask):
 
 class EntityWander(EntityLeafTask):
     """
-    Wanders randomly, turning away from walls if encountered
+    Wanders/turns randomly, turning away from walls if encountered
     """
 
-    def __init__(self, entity_controller):
+    def __init__(self, entity_controller, move=True):
         EntityLeafTask.__init__(self, entity_controller)
         self.ticker = util.TimeTicker((0.1, 0.8))
-        # self.no_obstacle = NoObstacle(entity_controller)
+        self.move = move
 
     def init(self):
         self.ticker.reset()
@@ -1106,11 +1267,14 @@ class EntityWander(EntityLeafTask):
             if random.random() < 0.4:
                 direction = constants.Direction.random()
 
-                # if self.no_obstacle.process() == Task.FAILURE:
-                if self.entity.world.is_point_blocked(self.entity.get_current_tile(), direction):
-                    direction = constants.Direction.opposite(direction)
+                if self.move:
+                    if self.entity.world.is_point_blocked(self.entity.get_current_tile(), direction):
+                        direction = constants.Direction.opposite(direction)
+                    self.controller.move_in_direction(direction)
 
-                self.controller.move_in_direction(direction)
+                # simply face another direction
+                else:
+                    self.controller.entity.turn(direction)
             else:
                 self.controller.halt()
 

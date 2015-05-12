@@ -6,6 +6,7 @@ import sys
 
 import pygame
 
+import ai
 import constants
 from building import Building
 import util
@@ -18,11 +19,11 @@ WORLDS = []
 class _WorldLayer:
     def __init__(self, world, name, default_fill=None, draw_above=False, solid_blanks=False):
         """
-        :param world The world this layer belongs to
-        :param name The name of this layer
-        :param default_fill What the grid should be filled with on creation
-        :param draw_above Should this layer be drawn over everything else
-        :param solid_blanks Should BLANK blocks be collidable
+        :param world: The world this layer belongs to
+        :param name: The name of this layer
+        :param default_fill: What the grid should be filled with on creation
+        :param draw_above: Should this layer be drawn over everything else
+        :param solid_blanks: Should BLANK blocks be collidable
         """
         self.world = world
         self.name = name
@@ -192,13 +193,16 @@ class BaseWorld:
         self.half_block_boundaries = half_block_boundaries
         self.renderer = None
 
+        self.nav_graph = None
+
         WORLDS.append(self)
 
-    def _post_init_renderer(self):
+    def post_load(self):
         """
-        Initialises the renderer
+        Finishes off the loading of the world
         """
         self.renderer = WorldRenderer(self)
+        self.renderer.initial_render()
 
     def _reg_layer(self, name, draw_above=False, solid_blanks=False):
         """
@@ -209,6 +213,9 @@ class BaseWorld:
         else:
             self.layers[name] = _WorldLayer(self, name, draw_above=draw_above, solid_blanks=solid_blanks)
 
+    def has_layer(self, layer):
+        return layer in self.layers.keys()
+
     def get_block(self, x, y, layer):
         """
         Gets the block at the given coords in the given layer
@@ -218,6 +225,7 @@ class BaseWorld:
     def match_block(self, x, y, predicate):
         """
         Returns the first uppermost block that matches the given predicate
+
         :param predicate: Function that takes (block, layer)
         :return: None if no suitable block found, otherwise the block
         """
@@ -235,7 +243,7 @@ class BaseWorld:
     def get_solid_block(self, x, y):
         """
         Finds any collidable/interactable blocks at the given coords and returns the uppermost
-        :return None if no collidable block found, otherwise the block
+        :return: None if no collidable block found, otherwise the block
         """
 
         def predicate(b, layer):
@@ -256,7 +264,7 @@ class BaseWorld:
         Sets the block at the given coords in the given layer.
         If it is collidable, its rect is inserted into the rects layer; otherwise None
 
-        :param overwrite_collisions Whether or not this new block should affect the collidability of the block
+        :param overwrite_collisions: Whether or not this new block should affect the collidability of the block
         """
         self.layers[layer][y][x] = block
 
@@ -279,15 +287,15 @@ class BaseWorld:
         Sets the shared instance of the given blocktype at the given coords in the given layer
         If it is collidable, its rect is inserted into the rects layer; otherwise None
 
-        :param overwrite_collisions Whether or not this new block should affect the collidability of the block
+        :param overwrite_collisions: Whether or not this new block should affect the collidability of the block
         """
         block = Block.HELPER.get_shared_instance(blocktype)
         self.set_block(x, y, block, layer, overwrite_collisions)
 
     def get_colliding_blocks(self, rect, interactables=False):
         """
-        :return All rects from the rects layer that collide with the given rect
-        :param interactables Check collisions with just interactive blocks, or solid blocks?
+        :param interactables: Check collisions with just interactive blocks, or solid blocks?
+        :return: All rects from the rects layer that collide with the given rect
         """
         rects = []
         if not interactables:
@@ -383,7 +391,8 @@ class BaseWorld:
     def tick(self, render=True):
         """
         Ticks the world and all entities, removing all the dead
-        :param render Whether or not the world should be rendered after ticking
+
+        :param render: Whether or not the world should be rendered after ticking
         """
         # find screen boundaries
         if render:
@@ -410,31 +419,32 @@ class BaseWorld:
             # if render:
             # for x, y, r in self.iterate_blocks(layer="rects"):
             # if r:
-            #             constants.SCREEN.draw_rect(r, filled=False)
+            # constants.SCREEN.draw_rect(r, filled=False)
 
     def iterate_blocks(self, x1=0, y1=0, x2=-1, y2=-1, layer="terrain"):
         """
         Iterate through blocks in the given layer, optionally only in the specified area
 
-        :return Generator for blocks in the given layer
+        :return: Generator for blocks in the given layer
         """
         if x2 < 0:
             x2 = self.tile_width
         if y2 < 0:
             y2 = self.tile_height
 
-        blocks = self.layers[layer]
         for x in xrange(x1, x2):
             for y in xrange(y1, y2):
-                yield (x, y, blocks[y][x])
+                b = self.get_block(x, y, layer)
+                if b:
+                    yield (x, y, b)
 
     def iterate_layers(self, x1, y1, x2, y2, rects=False, layer_func=None):
         """
         Iterates blocks in all layers in the specified area
 
-        :param rects Whether the rects layer should be included
-        :param layer_func Property function for layers to be included
-        :return Generator for all blocks in all layers
+        :param rects: Whether the rects layer should be included
+        :param layer_func: Property function for layers to be included
+        :return: Generator for all blocks in all layers
         """
 
         for layer in self.layers:
@@ -484,7 +494,7 @@ class BaseWorld:
     def get_surrounding_blocks(self, pos, layer="terrain"):
         """
         Finds the 4 surrounding blocks around the given tile position
-        :return block, blockpos, relativecoords ie (-1, 0)
+        :return: block, blockpos, relative coords ie (-1, 0)
         """
         for x, y in util.SURROUNDING_OFFSETS:
             posx, posy = x + pos[0], y + pos[1]
@@ -493,7 +503,7 @@ class BaseWorld:
 
     def random_location(self, size=(0, 0)):
         """
-        :return A random location that will accommodate an entity of the given size
+        :return: A random location that will accommodate an entity of the given size
         """
         return Vec2d(random.randrange(self.pixel_width - size[0]), random.randrange(self.pixel_height - size[1]))
 
@@ -511,6 +521,7 @@ class BaseWorld:
     def spawn_entity(self, entity, loc=None):
         """
         Adds the entity to the world
+
         :param loc: The spawn location; if None, the entity is not moved from their old position (possibly from an old world)
         """
         self._transfer_to_buffer(entity, entity.world, self)
@@ -551,8 +562,8 @@ class BaseWorld:
     @classmethod
     def load_tmx(cls, filename):
         """
-        :param filename File name.tmx
-        :return The loaded world
+        :param filename: File name.tmx
+        :return: The loaded world
         """
         from xml.etree import ElementTree
 
@@ -675,6 +686,9 @@ class BaseWorld:
 
         # todo combine collision rects
 
+        # finish up any other tasks
+        world.post_load()
+
         logging.debug("World loaded: [%s]" % filename)
         return world
 
@@ -710,7 +724,13 @@ class World(BaseWorld):
         self.roadmap = RoadMap(self)
 
         _BlockHelper.init_helper()
-        self._post_init_renderer()
+
+    def post_load(self):
+        BaseWorld.post_load(self)
+
+        # load nav graph
+        self.nav_graph = ai.NavigationGraph(self)
+        self.nav_graph.generate_graph()
 
     def get_block(self, x, y, layer="terrain"):
         return BaseWorld.get_block(self, x, y, layer)
@@ -723,26 +743,25 @@ class World(BaseWorld):
 
     def tick(self, render=True):
         BaseWorld.tick(self, render)
+
         # debug terrible rendering of lanes
-        if False and render:
-            for road in self.roadmap.roads:
-                i = 0
-                for r in road._bounds:
-                    pixel = util.Rect(r)
-                    colour = (255, 255, 0) if i > 1 else (0, 255, 255)
-                    i += 1
-                    for a in ('x', 'y', 'width', 'height'):
-                        util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
-                    constants.SCREEN.draw_rect(pixel, filled=False, colour=colour)
+        # if render:
+        # for road in self.roadmap.roads:
+        # i = 0
+        #         for r in road._bounds:
+        #             pixel = util.Rect(r)
+        #             colour = (255, 255, 0) if i > 1 else (0, 255, 255)
+        #             i += 1
+        #             for a in ('x', 'y', 'width', 'height'):
+        #                 util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
+        #             constants.SCREEN.draw_rect(pixel, filled=False, colour=colour)
+        #
+        #     for node in self.roadmap.nodes.values():
+        #         constants.SCREEN.draw_circle_in_tile(util.tile_to_pixel(node.point))
 
-            for node in self.roadmap.nodes.values():
-                constants.SCREEN.draw_circle_in_tile(util.tile_to_pixel(node.point))
-
-                # for r in self.roadmap.temp_regions:
-                # pixel = util.Rect(r)
-                # for a in ('x', 'y', 'width', 'height'):
-                # util.modify_attr(pixel, a, lambda x: x * constants.TILE_SIZE)
-                # constants.SCREEN.draw_rect(pixel, (100, 100, 255), filled=False)
+        # debug beautiful rendering of navigation graph
+        if render:
+            self.nav_graph.debug_render()
 
 
 class BuildingWorld(BaseWorld):
@@ -753,10 +772,10 @@ class BuildingWorld(BaseWorld):
         self._reg_layer("objects")
         self._reg_layer("rects")
 
-        self._post_init_renderer()
-
 
 # noinspection PyShadowingNames
+# todo this is horrible, I think a rethink and re-everything would be a good idea
+# the graph search should use the same as pedestrians, using ai.NavigationGraph
 class RoadMap:
     """
     Manages all roads/intersections
@@ -988,6 +1007,7 @@ class RoadMap:
     def _add_fork(self, road_regions, fork_list, line, width_direction, road_direction):
         """
         Registers a fork
+
         :param fork_list: List to add the processed fork to
         :param line: Fork tile line
         :param width_direction: Direction of the fork span
@@ -1007,7 +1027,7 @@ class RoadMap:
 
     def _traverse_road(self, startpos, width, width_direction, road_direction, start_line):
         """
-        :return Road object for this road,
+        :return: Road object for this road,
                     line at the end of the road,
                     list of (many consecutive) fork positions
         """
@@ -1047,7 +1067,7 @@ class RoadMap:
 
     def _filter_forks(self, forks, processed_road_regions):
         """
-        :return Fork line, width direction, road direction
+        :return: Fork line, width direction, road direction
         """
 
         def add_fork(line, width_direction, which_end, fork_list):
@@ -1242,7 +1262,7 @@ class _BlockHelper:
     def register_block(self, blocktype, surface, render_id=None):
         """
         Registers the given blocktype with the given surface
-        :return The newly created block
+        :return: The newly created block
         """
         cls = BlockType.get_class_from_type(blocktype)
         block = cls(blocktype, render_id)

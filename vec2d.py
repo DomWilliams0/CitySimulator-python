@@ -39,7 +39,7 @@ class Vec2d:
         else:
             raise IndexError("Invalid subscript " + str(key) + " to Vec2d")
 
-    # String representaion (for debugging)
+    # String representation (for debugging)
     def __repr__(self):
         return 'Vec2d(%s, %s)' % (self.x, self.y)
 
@@ -61,7 +61,7 @@ class Vec2d:
 
     # Generic operator handlers
     def _o2(self, other, f):
-        "Any two-operator operation where the left operand is a Vec2d"
+        """Any two-operator operation where the left operand is a Vec2d"""
         if isinstance(other, Vec2d):
             return Vec2d(f(self.x, other.x),
                          f(self.y, other.y))
@@ -73,7 +73,7 @@ class Vec2d:
                          f(self.y, other))
 
     def _r_o2(self, other, f):
-        "Any two-operator operation where the right operand is a Vec2d"
+        """Any two-operator operation where the right operand is a Vec2d"""
         if hasattr(other, "__getitem__"):
             return Vec2d(f(other[0], self.x),
                          f(other[1], self.y))
@@ -82,7 +82,7 @@ class Vec2d:
                          f(other, self.y))
 
     def _io(self, other, f):
-        "inplace operator"
+        """inplace operator"""
         if hasattr(other, "__getitem__"):
             self.x = f(self.x, other[0])
             self.y = f(self.y, other[1])
@@ -207,7 +207,7 @@ class Vec2d:
     def __rdivmod__(self, other):
         return self._r_o2(other, operator.divmod)
 
-    # Exponentation
+    # Exponentiation
     def __pow__(self, other):
         return self._o2(other, operator.pow)
 
@@ -354,8 +354,8 @@ class Vec2d:
     def zero(self):
         self.x = self.y = 0
 
-    def interpolate_to(self, other, range):
-        return Vec2d(self.x + (other[0] - self.x) * range, self.y + (other[1] - self.y) * range)
+    def interpolate_to(self, other, the_range):
+        return Vec2d(self.x + (other[0] - self.x) * the_range, self.y + (other[1] - self.y) * the_range)
 
     def convert_to_basis(self, x_vector, y_vector):
         return Vec2d(self.dot(x_vector) / x_vector.get_length_sqrd(), self.dot(y_vector) / y_vector.get_length_sqrd())
@@ -363,5 +363,5 @@ class Vec2d:
     def __getstate__(self):
         return [self.x, self.y]
 
-    def __setstate__(self, dict):
-        self.x, self.y = dict
+    def __setstate__(self, d):
+        self.x, self.y = d

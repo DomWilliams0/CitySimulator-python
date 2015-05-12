@@ -10,7 +10,7 @@ import world as world_module
 class Building:
     def __init__(self, world, x, y, width, height, name):
         """
-        :param name: World file, without .tmx
+        :param name: World file, without extension
         """
         self.world = world
         self.rect = util.Rect(x, y, width, height)
@@ -62,7 +62,7 @@ class Building:
 
     def get_closest_exit(self, position):
         """
-        :return zhe appropiate outside world position, relating to the given inside pixel coordinate
+        :return: The appropriate outside world position, relating to the given inside pixel coordinate
         """
         index = self._closest_door_index(position, False)
         return self.doors[index][1]

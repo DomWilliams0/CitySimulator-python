@@ -43,7 +43,6 @@ class BaseSpriteSheet:
         :param length: The frame count of each sequence
         :param animation_type: EntityType of animation
         :param nickname: Optional nickname, otherwise the (trimmed) filename
-        :return:
         """
         self.nickname = path.split(os.sep)[-1][:-4] if not nickname else nickname
         self.sprites = [[] for _ in xrange(height)]
@@ -57,6 +56,7 @@ class BaseSpriteSheet:
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
         """
         Loads the sprites into sequences
+
         :param sheet_dimensions: The dimensions of the spritesheet
         :param sprite_dimensions: The dimensions of each frame
         :param row_count: The number of rows to load
@@ -166,7 +166,7 @@ class HumanSpriteSheet(BaseSpriteSheet):
 
 class VehicleSpriteSheet(BaseSpriteSheet):
     """
-    Spritsheet for vehicles
+    Spritesheet for vehicles
     """
 
     def __init__(self, path, sheet_dimensions, starting_dimensions, ending_dimensions, length):
@@ -254,7 +254,8 @@ class HumanAnimator:
     def turn(self, index, starting_index=0):
         """
         Updates animation generator
-        :param index: Sequence index ie Entity.{1}
+
+        :param index: Sequence index
         :param starting_index: Starting frame in sequence
         """
         self.sequence_index = index
@@ -278,18 +279,12 @@ class VehicleAnimator(HumanAnimator):
 
     def __init__(self, entity, spritesheet):
         HumanAnimator.__init__(self, entity, spritesheet)
-        self.was_horizontal = self._is_horizontal(entity.direction)
+        self.was_horizontal = constants.Direction.is_horizontal(entity.direction)
         self.last_direction = entity.direction
-
-    def _is_horizontal(self, direction):
-        """
-        :return: True if the given direction is east/west, otherwise False
-        """
-        return direction in constants.Direction.HORIZONTALS
 
     def turn(self, index, starting_index=0, speed=-1):
         try:
-            hor = self._is_horizontal(index)
+            hor = constants.Direction.is_horizontal(index)
 
             # adjust aabb
             direction = self.entity.direction

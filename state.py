@@ -91,6 +91,7 @@ class StateManager:
     def change_state(self, new_state=None, transition_cls=None):
         """
         Switches to another state
+
         :param new_state: The state to switch to, or None to return to the previous
         :param transition_cls: Optional transition class between the states, otherwise randomly chosen
         """
@@ -124,6 +125,7 @@ class StateManager:
     def handle_user_event(self, e):
         """
         Handles custom events, called from event.py
+
         :param e: pygame event
         """
 
@@ -154,18 +156,19 @@ class StateManager:
         except AttributeError:
             pass
 
-    def transfer_control(self, entity, camera_centre=False):
+    def transfer_control(self, the_entity, camera_centre=False):
         """
         Transfers player control to the given entity
-        :param entity: If None, control is released completely (and the camera takes over)
-        :param camera_centre Should the camera immediately centre on the new controlled entity
+
+        :param the_entity: If None, control is released completely (and the camera takes over)
+        :param camera_centre: Should the camera immediately centre on the new controlled entity
         """
 
-        if self.is_controlling(entity):
+        if self.is_controlling(the_entity):
             return
 
-        self.controller.control(entity)
-        constants.SCREEN.camera.target = entity
+        self.controller.control(the_entity)
+        constants.SCREEN.camera.target = the_entity
         if camera_centre:
             constants.SCREEN.camera.centre()
 
@@ -188,8 +191,8 @@ class State:
 
     def __init__(self, background_colour=BACKGROUND, mouse_visible=True):
         """
-        :param background_colour The background colour of the state
-        :param mouse_visible Whether or not the mouse should be visible in this state
+        :param background_colour: The background colour of the state
+        :param mouse_visible: Whether or not the mouse should be visible in this state
         """
         self.background_colour = background_colour
         self.mouse_visible = mouse_visible
@@ -260,10 +263,6 @@ class OutsideWorldState(BaseGameState):
         constants.SCREEN.set_camera_world(self.world)
         constants.STATEMANAGER.controller.set_camera(constants.SCREEN.camera)
 
-        # render worlds
-        for w in world_module.WORLDS:
-            w.renderer.initial_render()
-
         # add some humans
         for _ in xrange(5):
             entity.create_entity(self.world, constants.EntityType.HUMAN)
@@ -282,18 +281,18 @@ class OutsideWorldState(BaseGameState):
         BaseGameState.tick(self)
 
         # todo temporary building action
-        self.building_timer -= 1
-        if self.building_timer < 0:
-            self.building_timer = random.randrange(20, 100)
-            for w in (x for x in world_module.WORLDS if isinstance(x, world_module.World)):
-                for b in w.buildings:
-                    for _ in xrange(random.randrange(2, 6)):
-                        b.set_window(random.choice(b.windows.keys()), random.random() < 0.5)
+        # self.building_timer -= 1
+        # if self.building_timer < 0:
+        # self.building_timer = random.randrange(20, 100)
+        #     for w in (x for x in world_module.WORLDS if isinstance(x, world_module.World)):
+        #         for b in w.buildings:
+        #             for _ in xrange(random.randrange(2, 6)):
+        #                 b.set_window(random.choice(b.windows.keys()), random.random() < 0.5)
 
 
 class BuildingState(BaseGameState):
     """
-    Gamestate for building interiors
+    Game state for building interiors
     """
 
     def __init__(self, building):
