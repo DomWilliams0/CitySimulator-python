@@ -1,5 +1,4 @@
 import random
-import logging
 
 import pygame
 
@@ -251,20 +250,20 @@ class OutsideWorldState(BaseGameState):
 
     def __init__(self):
         BaseGameState.__init__(self)
-        self.building_timer = 0
+        self.building_timer = util.TimeTicker((0.5, 2))
 
         # load entities
         entity.EntityLoader.load_all()
 
         # load main world, with all buildings
         self.world = world_module.World.load_tmx("world.tmx")
-        logging.info("Loaded %d worlds" % len(world_module.WORLDS))
+        constants.LOGGER.info("Loaded %d worlds" % len(world_module.WORLDS))
 
         constants.SCREEN.set_camera_world(self.world)
         constants.STATEMANAGER.controller.set_camera(constants.SCREEN.camera)
 
         # add some humans
-        for _ in xrange(5):
+        for _ in xrange(constants.CONFIG["game.humans.spawn-count"]):
             entity.create_entity(self.world, constants.EntityType.HUMAN)
 
         # add some vehicles
@@ -277,17 +276,22 @@ class OutsideWorldState(BaseGameState):
         # move mouse to centre
         pygame.mouse.set_pos(constants.WINDOW_CENTRE)
 
+        # debug path finding test
+        src = (25, 2)
+        dest = (55, 30)
+        path = self.world.nav_graph.find_walking_path(src, dest)
+        print("%r -> %r = %r" % (src, dest, path))
+
     def tick(self):
         BaseGameState.tick(self)
 
         # todo temporary building action
-        # self.building_timer -= 1
-        # if self.building_timer < 0:
-        # self.building_timer = random.randrange(20, 100)
-        #     for w in (x for x in world_module.WORLDS if isinstance(x, world_module.World)):
-        #         for b in w.buildings:
-        #             for _ in xrange(random.randrange(2, 6)):
-        #                 b.set_window(random.choice(b.windows.keys()), random.random() < 0.5)
+        if constants.CONFIG["game.buildings.strobe-lights"]:
+            if self.building_timer.tick():
+                for w in (x for x in world_module.WORLDS if isinstance(x, world_module.World)):
+                    for b in w.buildings:
+                        window, active = random.choice(b.windows.items())
+                        b.set_window(window, not active)
 
 
 class BuildingState(BaseGameState):

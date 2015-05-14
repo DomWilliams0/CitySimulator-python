@@ -1,4 +1,3 @@
-import logging
 import random
 from xml.etree import ElementTree
 
@@ -75,7 +74,7 @@ class EntityLoader:
 
                 spritesheet = tags.get("sprite")
                 if spritesheet:
-                    tags["sprite"] = animation.load(entitytype, util.get_resource_path(spritesheet))
+                    tags["sprite"] = animation.load(entitytype, util.search_for_file(spritesheet, "res/sprites"))
 
                 EntityLoader.TAGS[entitytype].append((name, {k.replace("-", "_"): v for k, v in tags.items()}))
 
@@ -157,7 +156,7 @@ class Entity(Sprite):
         try:
             animator_cls = animation.HumanAnimator if shared_sheet.type == constants.EntityType.HUMAN else animation.VehicleAnimator
         except AttributeError:
-            logging.log(logging.FATAL, "Spritesheet failed to load")
+            constants.LOGGER.fatal("Spritesheet failed to load")
             exit(-1)
             return
 
@@ -199,7 +198,7 @@ class Entity(Sprite):
         """
 
         delta = self.velocity * constants.DELTA
-        delta += self.aabb.center
+        delta += self.aabb.centre
         self.move_entity(*delta)
 
         # collisions
@@ -228,7 +227,7 @@ class Entity(Sprite):
                 dy = self.world.pixel_height - br[1] + h
 
             if dx != 0 or dy != 0:
-                c = self.aabb.center
+                c = self.aabb.centre
                 self.move_entity(c[0] + dx, c[1] + dy)
 
         if self.world_interactions:
@@ -269,7 +268,7 @@ class Entity(Sprite):
         """
         Moves positional rect to collision-corrected aabb
         """
-        self.rect.center = self.aabb.center
+        self.rect.centre = self.aabb.centre
 
     def turn(self, direction):
         """
@@ -312,7 +311,7 @@ class Entity(Sprite):
 
     def is_visible(self, boundaries):
         tile = self.get_current_tile()
-        return boundaries[0] <= tile[0] <= boundaries[2] and boundaries[1] <= tile[1] <= boundaries[3]
+        return boundaries[0] <= tile[0] <= boundaries[2] + 1 and boundaries[1] <= tile[1] <= boundaries[3] + 1
 
     def _resolve_collision(self, other):
         etype = other.entitytype
@@ -339,10 +338,10 @@ class Entity(Sprite):
             half_tile = constants.HALF_TILE_SIZE
 
         # resolve collision
-        center_a = self.aabb.center
-        center_b = (r[0] + half_tile[0], r[1] + half_tile[1])
-        distance_x = center_a[0] - center_b[0]
-        distance_y = center_a[1] - center_b[1]
+        centre_a = self.aabb.centre
+        centre_b = (r[0] + half_tile[0], r[1] + half_tile[1])
+        distance_x = centre_a[0] - centre_b[0]
+        distance_y = centre_a[1] - centre_b[1]
         min_x = self.aabb.width / 2 + half_tile[0]
         min_y = self.aabb.height / 2 + half_tile[1]
         if distance_x > 0:
@@ -372,7 +371,7 @@ class Entity(Sprite):
                 if (h_index < o_index and ydiff > 0) or (h_index > o_index and ydiff < 0):
                     self.world.entities[h_index], self.world.entities[o_index] = self.world.entities[o_index], self.world.entities[h_index]
             except ValueError:
-                logging.warning("Couldn't swap 2 entities (%r and %r)" % (self, other))
+                constants.LOGGER.warning("Couldn't swap 2 entities (%r and %r)" % (self, other))
 
     def handle_collisions(self):
         """
@@ -410,7 +409,7 @@ class Entity(Sprite):
         """
         Moves the entity to the given coordinates
         """
-        self.aabb.center = x, y
+        self.aabb.centre = x, y
         self.transform.set((x, y))
         self.catchup_aab()
 
@@ -457,9 +456,9 @@ class Human(Entity):
         self.world.move_to_spawn(self, 0)
 
     def catchup_aab(self):
-        self.rect.center = self.aabb.midtop
+        self.rect.centre = self.aabb.midtop
         try:
-            self.interact_aabb.center = self.aabb.center
+            self.interact_aabb.centre = self.aabb.centre
         except AttributeError:
             pass
 
@@ -554,7 +553,7 @@ class Vehicle(Entity):
         self.controller = ai.VehicleController(self)
 
     def catchup_aab(self):
-        self.rect.center = self.aabb.midtop
+        self.rect.centre = self.aabb.midtop
 
     def resolve_human_collision(self, human):
         # no collisions with passengers

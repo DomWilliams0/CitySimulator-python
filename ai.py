@@ -1,5 +1,4 @@
 from collections import OrderedDict
-import logging
 from math import log
 import random
 import operator
@@ -245,7 +244,7 @@ class InputController:
                         closest_door = building.get_closest_exit(world_pos)
 
                     if closest_door is None:
-                        logging.warning("Could not find the %s door position" % "entrance" if entering else "exit")
+                        constants.LOGGER.warning("Could not find the %s door position" % "entrance" if entering else "exit")
 
                     else:
                         constants.SCREEN.camera.centre(closest_door)
@@ -309,7 +308,7 @@ class InputController:
         try:
             if keydown:
                 if key == pygame.K_j:
-                    util.debug_block(self.entity.rect.center, self.entity.world)
+                    util.debug_block(self.entity.rect.centre, self.entity.world)
 
                 elif key == pygame.K_n:
                     for b in self.entity.world.buildings:
@@ -317,11 +316,11 @@ class InputController:
                             b.set_window(w, random.random() < 0.5)
                 elif key == pygame.K_g:
                     h = entity.create_entity(self.entity.world, constants.EntityType.HUMAN)
-                    h.move_entity(*self.entity.rect.center)
+                    h.move_entity(*self.entity.rect.centre)
 
                 elif key == pygame.K_h:
                     v = entity.create_entity(self.entity.world, constants.EntityType.VEHICLE)
-                    v.move_entity(*self.entity.rect.center)
+                    v.move_entity(*self.entity.rect.centre)
 
                 elif key == pygame.K_l:
                     print(self.entity.get_current_tile())
@@ -419,20 +418,20 @@ class CameraController(GeneralEntityController):
 
     def handle_event(self, e):
         consumed = BaseController.handle_event(self, e)
-        if not consumed:
-            # move camera towards mouse
-            if e.type == pygame.MOUSEMOTION:
-                moved = False
-                pos = self._mouse_border_to_direction(e.pos)
-                for i in xrange(2):
-                    vertical = i == 1
-                    if pos[i] != 0:
-                        direction = constants.Direction.delta_to_direction(pos[i], vertical)
-                        self.move_in_direction(direction, stop=False)
-                        moved = True
-                if not moved and self._was_moving:
-                    self.halt()
-                self._was_moving = moved
+        # if not consumed:
+        # # move camera towards mouse
+        # if e.type == pygame.MOUSEMOTION:
+        # moved = False
+        # pos = self._mouse_border_to_direction(e.pos)
+        # for i in xrange(2):
+        # vertical = i == 1
+        # if pos[i] != 0:
+        # direction = constants.Direction.delta_to_direction(pos[i], vertical)
+        # self.move_in_direction(direction, stop=False)
+        # moved = True
+        # if not moved and self._was_moving:
+        # self.halt()
+        # self._was_moving = moved
 
     def _move_entity(self):
         speed = self._get_speed()
@@ -458,7 +457,9 @@ class HumanController(GeneralEntityController):
 
         # walk = EntityMoveToLocation(self, (random.randrange(13, 19), random.randrange(6, 12)))
         # debug = DebugPrint("I, %r, am hereby debugged" % hex(id(self.entity)))
-        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self, move=False)))
+
+        if constants.CONFIG["game.humans.wandering.active"]:
+            self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self, move=constants.CONFIG["game.humans.wandering.move"])))
 
     def on_control_start(self):
         self.halt()
@@ -785,23 +786,20 @@ class NavigationGraph:
     OUT_OF_RANGE = 100
     WRONG_BLOCK_TYPE = 101
 
-    class Node:
-        def __init__(self, tile_pos):
-            self.tile_pos = tile_pos
-            self.children = []
-
     def __init__(self, the_world):
         assert isinstance(the_world, world_module.World)  # just for pavement
 
         self.world = the_world
-        self.nodes = []
-        self.rects = []
+        self.graph = None
+        self.debug_nodes = []
+        self.debug_rects = []
 
     def _valid(self, pos, blocktype):
         """
-        :return:    -1 = wrong block
-                     0 = invalid block
-                     1 = valid
+        :param blocktype: If None, only checks for out of world
+        :return:    WRONG_BLOCK_TYPE = wrong block
+                    OUT_OF_RANGE     = out of world
+                    1                = valid
         """
         # out of world
         if not self.world.is_in_range(*pos):
@@ -810,131 +808,304 @@ class NavigationGraph:
         block = self.world.get_block(*pos)
 
         # wrong blocktype
-        if block.blocktype != blocktype:
+        if blocktype is not None and block.blocktype != blocktype:
             return NavigationGraph.WRONG_BLOCK_TYPE
 
         return True
 
-    def _find_valid_directions(self, tile_pos, blocktype, span_width):
-        directions = []
-
-        # find span
-        for direction in constants.Direction.VALUES:
-            next_tile = tile_pos
-
-            valid_direction = True
-            for i in xrange(1, span_width):
-                next_tile = util.add_direction(next_tile, direction)
-
-                # check each tile in the direction
-                if self._valid(next_tile, blocktype) is not True:
-                    valid_direction = False
-                    break
-
-            if valid_direction:
-                # check next
-                peek_ahead = util.add_direction(next_tile, direction)
-
-                # valid direction only if different block
-                # if self._valid(peek_ahead, blocktype) == NavigationGraph.WRONG_BLOCK_TYPE:
-                if self._valid(peek_ahead, blocktype) != NavigationGraph.OUT_OF_RANGE:
-                    directions.append(direction)
-        return directions
-
-    def _explore(self, tile_pos, blocktype, length_direction, span_direction, span_width):
-        # probing time
-        current_pos = tile_pos
-        tile_count = 0
-        probing = True
-
-        while probing:
-            # move along
-            current_pos = util.add_direction(current_pos, length_direction)
-
-            # already visited
-            # if self._is_visited(current_pos):
-            # break
-
-            # check whole span
-            for delta in xrange(span_width):
-                next_pos = util.add_direction(current_pos, span_direction, delta)
-
-                if self._valid(next_pos, blocktype) is not True:
-                    probing = False
-                    break
-
-            tile_count += 1
-
-        # failure
-        if tile_count <= span_width:
-            return None
-
-        # create rectangle
-        rect = util.Rect(tile_pos, (0, 0))
-        rect.expand(span_direction, span_width)
-        rect.expand(length_direction, tile_count)
-
-        return rect
-
-    def _is_visited(self, pos):
-        pixel_pos = util.tile_to_pixel(pos)
-        for r, _ in self.rects:
-            if r.collidepoint(pixel_pos):
-                return True
-        return False
-
-    def generate_graph(self):
+    def _max_expansion(self, tile_pos, blocktype, func=None):
         """
-            better idea:
-            use technique similar to roadmap, by travelling along with a row/line of tiles 2 wide (but abstract line into class)
-            for every pavement in the world:
-                check not visited already
-                scroll along in every direction until we come across a non-pavement
-                    if a tile is already visited, keep going anyway
-                    set each tile to visited
-                add a node at the beginning and end of this rectangle
+        Expands as much as possible to fill all blocks of the given blocktype
 
+        :param blocktype: The blocktype to expand into, or None for all blocktypes
+        :param func: Optional checking after each expansion, if returns True then the expansion is halted and the rectangle returned
+        :return: The expanded rectangle
         """
 
-        blocktype = world_module.BlockType.PAVEMENT
-        span_width = 2
+        def check_rect(r):
+            valid = False
+            try:
+                for x, y, b in self.world.iterate_rectangle(r):
+                    valid = True
+                    if self._valid((x, y), blocktype) != 1:
+                        return False
+            except IndexError:
+                return False
 
-        for x, y, b in self.world.iterate_blocks():
-            if b.blocktype != blocktype:
-                continue
+            return valid
 
-            pos = (x, y)
+        rect = util.Rect(tile_pos, (1, 1))
+        directions = [True for _ in constants.Direction.VALUES]
 
-            # already visited
-            if self._is_visited(pos):
-                continue
+        while True:
+            all_expired = True
 
-            # find road span direction
-            spans = self._find_valid_directions(pos, blocktype, span_width)
+            for d in (x for x in constants.Direction.VALUES if directions[x]):
+                all_expired = False
+                rect.expand(d, 1)
 
-            if not spans:
-                continue
+                # check if this was unsuccessful
+                if not check_rect(rect):
+                    rect.expand(d, -1)
+                    directions[d] = False
 
-            for span in spans:
-                for direction in constants.Direction.perpendiculars(span):
-                    outline = self._explore(pos, blocktype, direction, span, span_width)
+                else:
+                    if func is not None and func(rect):
+                        return rect
 
-                    if not outline:
+            # all directions done
+            if all_expired:
+                return rect
+
+    def _connect_nodes(self, nodes, primary_blocktype, secondary_blocktypes=None):
+        """
+        Probes in every direction from every node, connecting nodes with edges
+        :param nodes: Set of nodes
+        :param primary_blocktype: Main blocktype: every edge will have weight 1
+        :param secondary_blocktypes: {Other blocktype: weight, ...}
+        """
+        # add nodes to graph
+        graph = {n: set() for n in nodes}
+
+        # represent nodes in a 2d grid
+        grid = [[None] * self.world.tile_width for _ in xrange(self.world.tile_height)]
+        for n in nodes:
+            grid[n[1]][n[0]] = n
+
+        # raycast from each
+        for n in nodes:
+
+            # check all directions
+            for d in constants.Direction.VALUES:
+                pos = n
+                total_weight = 0
+
+                while True:
+                    pos = util.add_direction(pos, d, 1)
+                    weight = None
+
+                    # invalid tile
+                    primary_check = self._valid(pos, primary_blocktype)
+
+                    # out of world: instant fail
+                    if primary_check == NavigationGraph.OUT_OF_RANGE:
+                        break
+
+                    # secondary blocktype checks
+                    elif secondary_blocktypes and primary_check == NavigationGraph.WRONG_BLOCK_TYPE:
+                        for bt, w in secondary_blocktypes.items():
+                            secondary_check = self._valid(pos, bt)
+                            if secondary_check == 1:
+                                weight = w
+                                break
+
+                        # still invalid blocktype
+                        if weight is None:
+                            break
+
+                    elif primary_check == 1:
+                        weight = 1
+
+                    total_weight += weight
+
+                    # check for another node reached
+                    other = grid[pos[1]][pos[0]]
+
+                    if other is None:
                         continue
 
-                    # success
-                    print(outline)
-                    self.rects.append((outline.to_pixel(), util.random_colour()))
+                    # connect the two
+                    graph[n].add((other, total_weight))
+                    graph[other].add((n, total_weight))
 
-        print(len(self.rects))
+                    break
+
+        self.graph = graph
+
+    def generate_graph(self, blocktype, secondary_blocktypes):
+        """
+        Generates the navigation graph, currently only for pavement
+        :param blocktype: Main blocktype: every edge will have weight 1
+        :param secondary_blocktypes: {Other blocktype: weight, ...}
+        """
+        rects = []
+
+        # collect all positions
+        positions = set((x, y) for x, y, b in self.world.iterate_blocks() if b.blocktype == blocktype)
+
+        # keep going until no more left
+        while positions:
+            # pop the first position
+            next_pos = next(iter(positions))
+
+            # create rect
+            rect = self._max_expansion(next_pos, blocktype)
+
+            # remove all selected tiles from set
+            for x in xrange(rect.x, rect.x + rect.width):
+                for y in xrange(rect.y, rect.y + rect.height):
+                    try:
+                        positions.remove((x, y))
+                    except KeyError:
+                        pass
+
+            rects.append(rect)
+            # self.debug_rects.append(rect.to_pixel())
+
+        # find all nodes (without duplicates)
+        nodes = set()
+        register_node = lambda rect: nodes.add(rect.position())
+        for r in rects:
+            # no need to centre
+            # span = float(min(r.width, r.height)) / 2
+            # r.translate((span, span))
+
+            # start
+            register_node(r)
+
+            # end
+            horizontal_length = r.width > r.height
+            shift_to_end = (r.width - r.height, 0) if horizontal_length else (0, r.height - r.width)
+            r.translate(shift_to_end)
+            register_node(r)
+
+        # connect nodes
+        self._connect_nodes(nodes, blocktype, secondary_blocktypes)
+
+        self.debug_nodes = nodes
+
+    def _find(self, start, goal):
+        frontier = util.Heap(lambda a, b: util.compare(heuristic(a), heuristic(b)), len(self.graph))
+        frontier.add(start)
+        came_from = {}
+        costs = {start: 0}
+        heuristic = lambda n: util.distance(n, goal)
+
+        while not frontier.empty():
+            current = frontier.pop()
+
+            if current == goal:
+                return goal, came_from
+
+            for neighbour, weight in self.graph[current]:
+                new_cost = costs[current] + weight
+                if neighbour not in costs or new_cost < costs[neighbour]:
+                    costs[neighbour] = new_cost
+                    # priority = new_cost + heuristic(neighbour)
+                    # frontier.put(neighbour, priority)
+                    frontier.add(neighbour)
+                    came_from[neighbour] = current
+
+        return None
+
+    def _find_path(self, start, goal):
+        """
+        Finds a path using A* from the start node to the goal node
+        """
+        result = self._find(start, goal)
+        if result is None:
+            return None
+
+        node, trace = result
+        path = [node]
+
+        while node in trace:
+            node = trace[node]
+            path.append(node)
+
+        return path[::-1]
+
+    def _find_nearest_node(self, tile_pos, blocktype):
+        def find_node(rect):
+            for x, y, _ in self.world.iterate_rectangle(rect):
+                if (x, y) in self.graph:
+                    return x, y
+
+        rect = self._max_expansion(tile_pos, blocktype, find_node)
+
+        # uh oh
+        if not rect:
+            return None
+
+        return find_node(rect)
+
+    def _find_direct_path(self, src_tile, dest_tile):
+        path = [src_tile]
+        current = src_tile
+
+        while tuple(current) != dest_tile:
+            dx, dy = map(operator.sub, dest_tile, current)
+            dya = abs(dy)
+            dxa = abs(dx)
+
+            if dxa > dya:
+                direction = (dx / dxa, 0)
+            else:
+                direction = (0, dy / dya)
+
+            current = tuple(map(operator.add, current, direction))
+            path.append(current)
+
+        return path
+
+    def find_walking_path(self, src, dest):
+
+        # todo if src is closer to dest than start, then walk direct
+        # todo else generate path first, then direct walk from start to the nearest node on that path
+
+        start = self._find_nearest_node(src, world_module.BlockType.PAVEMENT)
+        end = self._find_nearest_node(dest, world_module.BlockType.PAVEMENT)
+
+        prefix_path = self._find_direct_path(src, start)
+        main_path = self._find_path(start, end)
+        suffix_path = self._find_direct_path(end, dest)
+
+        path = prefix_path
+        path.extend(main_path)
+        path.extend(suffix_path)
+
+        # debug remove all from graph except this path
+        show_path = True
+        if show_path:
+            graph = {}
+            for i, n in enumerate(path):
+                children = set()
+                try:
+                    for o, w in self.graph[n]:
+                        if i != len(path) - 1 and path[i + 1] == o:
+                            children.add((o, w))
+                    graph[n] = children
+                except KeyError:
+                    self.debug_rects.append(util.Rect(n, (1, 1)).to_pixel())
+                    pass
+
+            self.graph = graph
+        # debug end
+
+        return path
 
     def debug_render(self):
-        for n in self.nodes:
-            pos = util.tile_to_pixel(n.tile_pos)
-            constants.SCREEN.draw_rect(util.Rect(pos, constants.TILE_DIMENSION), filled=False, colour=(100, 10, 10, 50))
+        # for n in self.debug_nodes:
+        # constants.SCREEN.draw_rect(util.Rect(util.tile_to_pixel(n), constants.TILE_DIMENSION))
+        #
+        for r in self.debug_rects:
+            constants.SCREEN.draw_rect(r, filled=False)
 
-        for r, c in self.rects:
-            constants.SCREEN.draw_rect(r, colour=c, filled=False)
+        min_w = min(w for neighbours in self.graph.values() for _, w in neighbours)
+        max_w = max(w for neighbours in self.graph.values() for _, w in neighbours)
+
+        for node, neighbours in self.graph.items():
+            node_pos = util.tile_to_pixel(node)
+            constants.SCREEN.draw_rect(util.Rect(node_pos, constants.TILE_DIMENSION), filled=False, colour=(0, 180, 20))
+
+            for n, weight in neighbours:
+                edge = util.tile_to_pixel(map(lambda x: x + 0.5, n))
+                node_pos = util.tile_to_pixel(map(lambda x: x + 0.5, node))
+                edge_c = util.lerp_colours((0, 0, 255), (255, 0, 0), util.convert_to_range((min_w, max_w), (0, 1), weight))
+                constants.SCREEN.draw_line(node_pos, edge, colour=edge_c)
+
+                label = str(weight)
+                constants.SCREEN.draw_string(label, util.midpoint(node_pos, edge), colour=(255, 255, 255), absolute=False)
 
 
 # behaviour tree goodness

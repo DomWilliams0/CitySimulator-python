@@ -71,5 +71,22 @@ assert_equal(util.Rect(rect).expand(Direction.NORTH, 5).as_tuple(), (5, 0, 20, 2
 assert_equal(util.Rect(rect).expand(Direction.SOUTH, 5).as_tuple(), (5, 5, 20, 25))
 assert_equal(util.Rect(rect).expand(Direction.EAST, 5).as_tuple(), (5, 5, 25, 20))
 assert_equal(util.Rect(rect).expand(Direction.WEST, 5).as_tuple(), (0, 5, 25, 20))
+assert_equal(util.Rect(rect).expand(Direction.NORTH, 20).expand(Direction.NORTH, -20).as_tuple(), rect.as_tuple())
+assert_equal(util.Rect(rect).expand(Direction.SOUTH, 20).expand(Direction.SOUTH, -20).as_tuple(), rect.as_tuple())
+assert_equal(util.Rect(rect).expand(Direction.EAST, 20).expand(Direction.EAST, -20).as_tuple(), rect.as_tuple())
+assert_equal(util.Rect(rect).expand(Direction.WEST, 20).expand(Direction.WEST, -20).as_tuple(), rect.as_tuple())
+
+# heap
+heap = util.Heap(util.compare, 10)
+for x in (5, 2, 8, 23, 7, 9):
+    heap.add(x)
+assert_equal(str(heap), str([23, 8, 9, 2, 7, 5]))
+assert_equal(heap.pop(), 23)
+assert_equal(str(heap), str([9, 8, 5, 2, 7]))
+assert_false(heap.empty())
+
+# colours
+assert_equal(map(int, util.lerp_colours((0, 0, 0), (255, 255, 255), 0.5)), [127, 127, 127])
+assert_equal(map(int, util.lerp_colours((255, 255, 255), (0, 0, 0), 0.5)), [127, 127, 127])
 
 print("All passed!")

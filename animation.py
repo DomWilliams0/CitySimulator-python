@@ -1,4 +1,3 @@
-import logging
 import random
 import os
 import copy
@@ -51,7 +50,7 @@ class BaseSpriteSheet:
         self.length = length
 
         HumanSpriteSheet.LOADED[self.nickname] = self
-        logging.debug("Spritesheet loaded: [%s]" % self.nickname)
+        constants.LOGGER.debug("Spritesheet loaded: [%s]" % self.nickname)
 
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
         """
@@ -125,7 +124,7 @@ def get_random(animation_type=None):
         x = random.choice(BaseSpriteSheet.LOADED.values())
         if x.type == animation_type or animation_type is None:
             return x
-    logging.error("A random spritesheet of type %s could not be found!" % (util.get_enum_name(constants.EntityType, animation_type)))
+    constants.LOGGER.error("A random spritesheet of type %s could not be found!" % (util.get_enum_name(constants.EntityType, animation_type)))
     return None
 
 

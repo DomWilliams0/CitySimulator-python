@@ -1,8 +1,11 @@
-import logging
+from _yaml import ParserError
+import os
 import random
 import operator
+from datetime import datetime
 
 import pygame
+import yaml
 
 from vec2d import Vec2d
 import world as world_module
@@ -23,14 +26,17 @@ class GameScreen:
         """
         Creates the window once pygame has been initialised
         """
-        self._window = pygame.display.set_mode(WINDOW_SIZE)
+        flags = 0
+        if CONFIG["display.borderless-fullscreen"]:
+            flags |= pygame.NOFRAME
+            set_window_size(util.get_monitor_resolution())
+
+        self._window = pygame.display.set_mode(WINDOW_SIZE, flags)
         pygame.display.set_caption("flibbid")
         self.font = pygame.font.SysFont("monospace", 20, bold=True)
 
-        logging.basicConfig(level=logging.INFO)
-
         # set icon
-        icon = pygame.image.load(util.get_resource_path("icon.png")).convert_alpha()
+        icon = pygame.image.load(util.get_relative_path("icon.png")).convert_alpha()
         pygame.display.set_icon(icon)
 
     def set_camera_world(self, world):
@@ -116,6 +122,101 @@ class GameScreen:
     def shake_camera(self, time=0.2, force=5):
         if self.camera:
             self.camera.shaker.shake(time, force)
+
+
+class ConfigLoader:
+    CONFIG = util.get_relative_path("config.yml", "config")
+    DEFAULT_CONFIG = util.get_relative_path(".default_config", "config")
+
+    def _parse(self, block, children, sep, data_context):
+        if isinstance(block, dict):
+            for sub_title, sub_dict in block.items():
+                self._parse(sub_dict, "%s%s%s" % (children, sep if children else "", sub_title), sep, data_context)
+        else:
+            data_context[children] = block
+
+    def _create_default_config(self):
+        try:
+            with open(ConfigLoader.CONFIG, 'w') as config:
+                config.write("# Config generated %s%s" % (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), os.linesep))
+
+                with open(ConfigLoader.DEFAULT_CONFIG) as default:
+                    config.write(default.read())
+
+            return True
+        except IOError:
+            LOGGER.warning("Failed to generate default config")
+            # error will caught when trying to load default config
+            return False
+
+    # noinspection PyUnresolvedReferences
+    def _format_error(self, e):
+        if not isinstance(e, yaml.YAMLError):
+            return str(e)
+
+        lines = []
+        if e.context is not None:
+            lines.append(e.context)
+        if e.problem is not None:
+            lines.append(e.problem)
+        if e.note is not None:
+            lines.append(e.note)
+        return ', '.join(lines)
+
+    def _verify(self, config):
+        def verify(s, clazz, *predicates):
+            x = config[s]
+            try:
+                assert isinstance(x, clazz)
+                for p in predicates:
+                    assert p(x)
+            except AssertionError as e:
+                e.message = s
+                raise e
+
+        try:
+            verify("display.resolution", list, lambda x: len(x) == 2, lambda x: not any(y <= 0 for y in x))
+            verify("display.borderless-fullscreen", bool)
+
+            verify("game.humans.spawn-count", int, lambda x: x >= 0)
+            verify("game.humans.wandering.active", bool)
+            verify("game.humans.wandering.move", bool)
+
+            verify("game.buildings.strobe-lights", bool)
+        except AssertionError as e:
+            raise ParserError("Invalid config value: %s" % e.message)
+
+    def _load(self, default):
+        try:
+            f = yaml.load(open(ConfigLoader.DEFAULT_CONFIG if default else ConfigLoader.CONFIG))
+            config = {}
+            self._parse(f, "", ".", config)
+            self._verify(config)
+            return config
+        except (yaml.YAMLError, IOError, ParserError) as e:
+            # couldn't load config
+            if not default:
+                # create config
+                if isinstance(e, IOError):
+                    LOGGER.info("Could not find config file, creating default")
+                    success = self._create_default_config()
+                    return self._load(not success)  # load normal config if successful, else try to load default
+
+                # error in config, load default
+                else:
+                    LOGGER.error("Failed to load config. Reverting to default (%s)" % self._format_error(e))
+                    return self._load(True)
+
+            # couldn't load default config either
+            else:
+                LOGGER.fatal("Could not find default config (%s); quitting" % ConfigLoader.DEFAULT_CONFIG)
+                exit(-1)
+
+    @staticmethod
+    def load_config():
+        global CONFIG
+        CONFIG = ConfigLoader()._load(False)
+        LOGGER.info("Loaded config")
 
 
 class Camera:
@@ -405,13 +506,26 @@ class Input:
     DIRECTIONAL_KEYS = [UP, LEFT, DOWN, RIGHT]
 
 
+LOGGER = None
+CONFIG = None
 STATEMANAGER = None
-RUNNING = True
 SCREEN = GameScreen()
+
+RUNNING = True
 DELTA = 0
 LAST_DELTA = 0
-WINDOW_SIZE = (640, 640)
-WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
+WINDOW_SIZE = None
+WINDOW_CENTRE = None
+
+
+def set_window_size(resolution):
+    """
+    :param resolution: (w, h) tuple
+    """
+    global WINDOW_SIZE, WINDOW_CENTRE
+    WINDOW_SIZE = resolution
+    WINDOW_CENTRE = (WINDOW_SIZE[0] / 2, WINDOW_SIZE[1] / 2)
+
 
 TILESET_RESOLUTION = 16
 TILE_SIZE = 32

@@ -1,0 +1,13 @@
+display:
+  borderless-fullscreen: false
+  resolution: [1080, 768]
+
+game:
+  humans:
+    spawn-count: 5
+    wandering:
+      active: true
+      move: true
+
+  buildings:
+    strobe-lights: true

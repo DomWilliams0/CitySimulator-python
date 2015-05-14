@@ -1,3 +1,4 @@
+import logging
 import os
 
 import pygame
@@ -8,9 +9,30 @@ import state
 
 class Game:
     def __init__(self):
+        self.initiate()
         constants.SCREEN.create_window()
         constants.STATEMANAGER = state.StateManager()
         constants.STATEMANAGER.change_state(state.OutsideWorldState())
+
+    def initiate(self):
+        # logger
+        self.init_logger()
+
+        # load config
+        constants.ConfigLoader.load_config()
+        constants.set_window_size(constants.CONFIG["display.resolution"])
+
+    def init_logger(self):
+        logger = logging.getLogger(__name__)
+
+        handler = logging.StreamHandler()
+        logger.setLevel(logging.INFO)
+
+        formatter = logging.Formatter("%(asctime)s,%(msecs)d - %(levelname)s - %(message)s", "%d/%m/%Y %H:%M:%S")
+        handler.setFormatter(formatter)
+
+        logger.addHandler(handler)
+        constants.LOGGER = logger
 
     def start(self):
         """

@@ -1,7 +1,6 @@
 from collections import OrderedDict
 import random
 import operator
-import logging
 import sys
 
 import pygame
@@ -209,7 +208,7 @@ class BaseWorld:
         Registers a layer with the given name and properties
         """
         if name in self.layers:
-            logging.warning("Layer '%s' already exists in the world" % name)
+            constants.LOGGER.warning("Layer '%s' already exists in the world" % name)
         else:
             self.layers[name] = _WorldLayer(self, name, draw_above=draw_above, solid_blanks=solid_blanks)
 
@@ -355,14 +354,7 @@ class BaseWorld:
         self.entity_buffer.clear()
 
     def depth_sort_entities(self):
-        e = self.entities
-        for i in xrange(1, len(e)):
-            j = i
-            c = e[j]
-            while j > 0 and c.transform.y < e[j - 1].transform.y:
-                e[j] = e[j - 1]
-                j -= 1
-            e[j] = c
+        util.insert_sort(self.entities, lambda a, b: util.compare(a.transform.y, b.transform.y))
 
     def iterate_surrounding_grid_cells(self, grid_cell):
         """
@@ -437,6 +429,10 @@ class BaseWorld:
                 b = self.get_block(x, y, layer)
                 if b:
                     yield (x, y, b)
+
+    def iterate_rectangle(self, r, layer="terrain"):
+        for x, y, b in self.iterate_blocks(r.x, r.y, r.x + r.width, r.y + r.height, layer):
+            yield x, y, b
 
     def iterate_layers(self, x1, y1, x2, y2, rects=False, layer_func=None):
         """
@@ -567,7 +563,7 @@ class BaseWorld:
         """
         from xml.etree import ElementTree
 
-        tree = ElementTree.parse(util.get_resource_path(filename))
+        tree = ElementTree.parse(util.search_for_file(filename, "res/world"))
         root = tree.getroot()
 
         def iterate_objects(name):
@@ -689,7 +685,7 @@ class BaseWorld:
         # finish up any other tasks
         world.post_load()
 
-        logging.debug("World loaded: [%s]" % filename)
+        constants.LOGGER.debug("World loaded: [%s]" % filename)
         return world
 
     def add_spawn(self, entitytype, x, y, o=None, w=None, h=None):
@@ -730,7 +726,8 @@ class World(BaseWorld):
 
         # load nav graph
         self.nav_graph = ai.NavigationGraph(self)
-        self.nav_graph.generate_graph()
+        self.nav_graph.generate_graph(BlockType.PAVEMENT, {BlockType.ROAD: 5, BlockType.SAND: 20})
+        constants.LOGGER.debug("Generation navigation graph of %d nodes" % len(self.nav_graph.graph))
 
     def get_block(self, x, y, layer="terrain"):
         return BaseWorld.get_block(self, x, y, layer)
@@ -748,7 +745,7 @@ class World(BaseWorld):
         # if render:
         # for road in self.roadmap.roads:
         # i = 0
-        #         for r in road._bounds:
+        # for r in road._bounds:
         #             pixel = util.Rect(r)
         #             colour = (255, 255, 0) if i > 1 else (0, 255, 255)
         #             i += 1
@@ -1220,14 +1217,14 @@ class _BlockHelper:
         if not Block.HELPER:
             Block.HELPER = _BlockHelper()
             Block.HELPER.load_tileset()
-            logging.info("Tileset loaded")
+            constants.LOGGER.info("Tileset loaded")
 
     def __init__(self):
         self.shared_blocks = {}
         self.block_images = {}
 
     def load_tileset(self):
-        tileset_surface = pygame.image.load(util.get_resource_path("tileset.png")).convert_alpha()
+        tileset_surface = pygame.image.load(util.get_relative_path("tileset.png", "res/world")).convert_alpha()
 
         rect = util.Rect(0, 0, constants.TILESET_RESOLUTION, constants.TILESET_RESOLUTION)
         width = tileset_surface.get_width()
@@ -1457,7 +1454,7 @@ class InteractableExitDoormatBlock(InteractableBlock):
         self.building = None
 
     def interact(self, human, x, y):
-        c = human.rect.center
+        c = human.rect.centre
         dy = c[1] - y
         if 0 < dy <= constants.TILE_SIZE / 2:
             self.building.exit(human)
