@@ -182,13 +182,13 @@
   </object>
  </objectgroup>
  <objectgroup name="_spawns">
-  <object x="16" y="416" width="928" height="80">
+  <object x="0" y="80" width="528" height="128">
    <properties>
     <property name="entitytype" value="human"/>
     <property name="orientation" value="R"/>
    </properties>
   </object>
-  <object x="240" y="496" width="64" height="48">
+  <object x="272" y="112" width="64" height="48">
    <properties>
     <property name="entitytype" value="vehicle"/>
     <property name="orientation" value="W"/>
