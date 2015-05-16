@@ -1,4 +1,5 @@
 from _yaml import ParserError
+import logging
 import os
 import random
 import operator
@@ -175,16 +176,22 @@ class ConfigLoader:
                 raise e
 
         try:
+            verify("debug.log-level", str, lambda x: isinstance(logging.getLevelName(x), int))
+
             verify("display.resolution", list, lambda x: len(x) == 2, lambda x: not any(y <= 0 for y in x))
             verify("display.borderless-fullscreen", bool)
 
             verify("game.humans.spawn-count", int, lambda x: x >= 0)
-            verify("game.humans.wandering.active", bool)
-            verify("game.humans.wandering.move", bool)
+            verify("game.humans.wandering", bool)
+
+            verify("game.vehicles.spawn-count", int, lambda x: x >= 0)
 
             verify("game.buildings.strobe-lights", bool)
         except AssertionError as e:
             raise ParserError("Invalid config value: %s" % e.message)
+
+    def _post_process(self, config):
+        LOGGER.set_level(config["debug.log-level"])
 
     def _load(self, default):
         try:
@@ -192,6 +199,7 @@ class ConfigLoader:
             config = {}
             self._parse(f, "", ".", config)
             self._verify(config)
+            self._post_process(config)
             return config
         except (yaml.YAMLError, IOError, ParserError) as e:
             # couldn't load config
@@ -217,6 +225,57 @@ class ConfigLoader:
         global CONFIG
         CONFIG = ConfigLoader()._load(False)
         LOGGER.info("Loaded config")
+
+
+class Logger:
+    def __init__(self):
+        self._prefix = None
+        self._prefix_levels = []
+        self.logger = logging.getLogger()
+
+        handler = logging.StreamHandler()
+        self.set_level(logging.INFO)
+
+        max_level_name = len(max((x for x in logging._levelNames.keys() if isinstance(x, str)), key=lambda x: len(x)))
+        format_string = "%(asctime)s,%(msecs)03d - %(levelname)-{linelength}s - %(message)s".format(**{"linelength": max_level_name})
+        formatter = logging.Formatter(format_string, "%d/%m/%Y %H:%M:%S")
+        handler.setFormatter(formatter)
+
+        self.logger.addHandler(handler)
+
+    def debug(self, msg, *args, **kwargs):
+        self._log(logging.DEBUG, msg, *args, **kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        self._log(logging.INFO, msg, *args, **kwargs)
+
+    def critical(self, msg, *args, **kwargs):
+        self._log(logging.CRITICAL, msg, *args, **kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        self._log(logging.WARNING, msg, *args, **kwargs)
+
+    def exception(self, msg, *args, **kwargs):
+        self.logger.exception(msg, *args, **kwargs)
+
+    def _log(self, level, msg, *args, **kwargs):
+        if self._prefix:
+            msg = self._prefix + msg
+        self.logger.log(level, msg, *args, **kwargs)
+
+    def set_level(self, level):
+        self.logger.setLevel(level)
+
+    def push_level(self):
+        self._prefix_levels.append(" : ")
+        self._update_prefix()
+
+    def pop_level(self):
+        self._prefix_levels.pop()
+        self._update_prefix()
+
+    def _update_prefix(self):
+        self._prefix = ''.join(self._prefix_levels)
 
 
 class Camera:
@@ -458,19 +517,24 @@ class Direction:
         return direction in (Direction.NORTH, Direction.SOUTH)
 
     @staticmethod
-    def delta_to_direction(delta, vertical):
-        """
-        :param delta: integer
-        :param vertical: True if in y axis, otherwise False
-        """
-        if vertical:
-            return Direction.SOUTH if delta > 0 else Direction.NORTH
-        else:
-            return Direction.EAST if delta > 0 else Direction.WEST
-
-    @staticmethod
     def is_negative(direction):
         return direction == Direction.NORTH or direction == Direction.WEST
+
+    @staticmethod
+    def get_direction_between(p1, p2):
+        dx, dy = map(operator.sub, p2, p1)
+        dxa = abs(dx)
+        dya = abs(dy)
+
+        if dxa > dya:
+            direction = (dx / dxa if dxa != 0 else dx, 0)
+        else:
+            direction = (0, dy / dya if dy != 0 else dy)
+
+        if direction == (0, 0):
+            return None
+
+        return util.SURROUNDING_OFFSETS.index(direction)
 
 
 class EntityType:

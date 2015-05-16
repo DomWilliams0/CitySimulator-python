@@ -7,7 +7,6 @@ import pygame
 import constants
 import util
 
-
 HUMAN_DIMENSION = (32, 32)
 VEHICLE_DIMENSION = (64, 32)
 
@@ -50,7 +49,7 @@ class BaseSpriteSheet:
         self.length = length
 
         HumanSpriteSheet.LOADED[self.nickname] = self
-        constants.LOGGER.debug("Spritesheet loaded: [%s]" % self.nickname)
+        constants.LOGGER.debug("Loaded spritesheet %s" % self.nickname)
 
     def _load_sprites(self, sheet_dimensions, sprite_dimensions, row_count, start_y):
         """

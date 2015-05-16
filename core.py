@@ -1,4 +1,3 @@
-import logging
 import os
 
 import pygame
@@ -16,23 +15,11 @@ class Game:
 
     def initiate(self):
         # logger
-        self.init_logger()
+        constants.LOGGER = constants.Logger()
 
         # load config
         constants.ConfigLoader.load_config()
         constants.set_window_size(constants.CONFIG["display.resolution"])
-
-    def init_logger(self):
-        logger = logging.getLogger(__name__)
-
-        handler = logging.StreamHandler()
-        logger.setLevel(logging.INFO)
-
-        formatter = logging.Formatter("%(asctime)s,%(msecs)d - %(levelname)s - %(message)s", "%d/%m/%Y %H:%M:%S")
-        handler.setFormatter(formatter)
-
-        logger.addHandler(handler)
-        constants.LOGGER = logger
 
     def start(self):
         """

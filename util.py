@@ -11,7 +11,6 @@ from pygame.rect import Rect as pygame_Rect
 import constants
 import world as world_module
 
-
 SURROUNDING_OFFSETS = (0, -1), (-1, 0), (0, 1), (1, 0)
 SURROUNDING_DIAGONAL_OFFSETS = (0, 0), (-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)
 __FILE_SPLIT_PATTERN = re.compile(r"[\\//]")
@@ -70,6 +69,13 @@ def round_down_to_multiple(x, multiple):
     :return: x rounded down to the nearest multiple of 'multiple'
     """
     return int(multiple * floor((float(x) / multiple)))
+
+
+def round_to_tile(pixel_pos):
+    """
+    :return: The given pixel position rounded to the nearest tile boundary (still as a pixel position)
+    """
+    return tuple(map(lambda x: round_to_tile_size(x), pixel_pos))
 
 
 def pixel_to_tile(pos):
@@ -368,8 +374,6 @@ class Rect:
             return self.x + self.width / 2, self.y
         elif key == 'centre':
             return self.x + self.width / 2, self.y + self.height / 2
-        elif key == 'topcentre':
-            return self.x + self.width / 2, self.y
         else:
             return self.__dict__[key]
 

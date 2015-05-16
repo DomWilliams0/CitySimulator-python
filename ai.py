@@ -100,7 +100,7 @@ class BaseController:
         p = self.wasd[constants.Input.DIRECTIONAL_KEYS[constants.Direction.SOUTH if vertical else constants.Direction.EAST]]
         return 0 if n == p else -1 if n else 1
 
-    def _get_speed(self):
+    def get_speed(self):
         """
         :return: The current speed of the controller, which is applied to the entity's velocity
         """
@@ -110,7 +110,7 @@ class BaseController:
         """
         Modifies the entity's velocity, depending on pressed keys
         """
-        speed = self._get_speed()
+        speed = self.get_speed()
         self.entity.velocity.x = self._get_direction(False) * speed
         self.entity.velocity.y = self._get_direction(True) * speed
 
@@ -316,11 +316,11 @@ class InputController:
                             b.set_window(w, random.random() < 0.5)
                 elif key == pygame.K_g:
                     h = entity.create_entity(self.entity.world, constants.EntityType.HUMAN)
-                    h.move_entity(*self.entity.rect.centre)
+                    h.move_entity(self.entity.rect.centre)
 
                 elif key == pygame.K_h:
                     v = entity.create_entity(self.entity.world, constants.EntityType.VEHICLE)
-                    v.move_entity(*self.entity.rect.centre)
+                    v.move_entity(self.entity.rect.centre)
 
                 elif key == pygame.K_l:
                     print(self.entity.get_current_tile())
@@ -357,7 +357,7 @@ class GeneralEntityController(BaseController):
             self.speed = min_speed
             self.sprint_speed = fast_speed
 
-    def _get_speed(self):
+    def get_speed(self):
         return self.sprint_speed if self.sprint else self.speed
 
     def handle(self, keydown, key):
@@ -434,7 +434,7 @@ class CameraController(GeneralEntityController):
         # self._was_moving = moved
 
     def _move_entity(self):
-        speed = self._get_speed()
+        speed = self.get_speed()
         hdir = self._get_direction(False)
         vdir = self._get_direction(True)
         if hdir or vdir:
@@ -458,11 +458,23 @@ class HumanController(GeneralEntityController):
         # walk = EntityMoveToLocation(self, (random.randrange(13, 19), random.randrange(6, 12)))
         # debug = DebugPrint("I, %r, am hereby debugged" % hex(id(self.entity)))
 
-        if constants.CONFIG["game.humans.wandering.active"]:
-            self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self, move=constants.CONFIG["game.humans.wandering.move"])))
+        self.behaviour_tree = BehaviourTree(self, Repeater(EntityWander(self, move=False)))
+
+    def tick(self):
+        BaseController.tick(self)
 
     def on_control_start(self):
         self.halt()
+
+    def walk_to_goal(self, goal_tile_pos):
+        path = self.entity.world.nav_graph.find_walking_path(self.entity.get_current_tile(), goal_tile_pos)
+        if not path:
+            return
+
+        self.behaviour_tree.set_root(Sequence(HumanFollowPath(self, path), self.behaviour_tree.get_root()))
+
+    def roam(self):
+        self.behaviour_tree.set_root(Repeater(HumanRoam(self)))
 
 
 class _Engine:
@@ -622,7 +634,7 @@ class VehicleController(BaseController):
         self.last_pos = vehicle.transform.as_tuple()
         self.last_direction = vehicle.direction
 
-    def _get_speed(self):
+    def get_speed(self):
         return self.engine.last_speed
 
     def _get_direction(self, vertical):
@@ -956,10 +968,6 @@ class NavigationGraph:
         nodes = set()
         register_node = lambda rect: nodes.add(rect.position())
         for r in rects:
-            # no need to centre
-            # span = float(min(r.width, r.height)) / 2
-            # r.translate((span, span))
-
             # start
             register_node(r)
 
@@ -1015,7 +1023,7 @@ class NavigationGraph:
 
         return path[::-1]
 
-    def _find_nearest_node(self, tile_pos, blocktype):
+    def _find_nearest_node(self, tile_pos, blocktype=None):
         def find_node(rect):
             for x, y, _ in self.world.iterate_rectangle(rect):
                 if (x, y) in self.graph:
@@ -1023,9 +1031,13 @@ class NavigationGraph:
 
         rect = self._max_expansion(tile_pos, blocktype, find_node)
 
-        # uh oh
-        if not rect:
-            return None
+        # try again with all directions
+        if rect.size() == (1, 1):
+            rect = self._max_expansion(tile_pos, None, find_node)
+
+            # rekt
+            if not rect:
+                return None
 
         return find_node(rect)
 
@@ -1034,38 +1046,37 @@ class NavigationGraph:
         current = src_tile
 
         while tuple(current) != dest_tile:
-            dx, dy = map(operator.sub, dest_tile, current)
-            dya = abs(dy)
-            dxa = abs(dx)
-
-            if dxa > dya:
-                direction = (dx / dxa, 0)
-            else:
-                direction = (0, dy / dya)
-
-            current = tuple(map(operator.add, current, direction))
+            direction = constants.Direction.get_direction_between(current, dest_tile)
+            current = tuple(util.add_direction(current, direction))
             path.append(current)
 
         return path
 
     def find_walking_path(self, src, dest):
 
+        # find nodes (in all directions)
+        start_node = self._find_nearest_node(src, world_module.BlockType.PAVEMENT)
+        end_node = self._find_nearest_node(dest, world_module.BlockType.PAVEMENT)
+
+        if start_node is None or end_node is None:
+            return None
+
         # todo if src is closer to dest than start, then walk direct
-        # todo else generate path first, then direct walk from start to the nearest node on that path
 
-        start = self._find_nearest_node(src, world_module.BlockType.PAVEMENT)
-        end = self._find_nearest_node(dest, world_module.BlockType.PAVEMENT)
+        prefix_path = self._find_direct_path(src, start_node)
+        main_path = self._find_path(start_node, end_node)
+        suffix_path = self._find_direct_path(end_node, dest)
 
-        prefix_path = self._find_direct_path(src, start)
-        main_path = self._find_path(start, end)
-        suffix_path = self._find_direct_path(end, dest)
+        # no path
+        if not main_path or not prefix_path or not suffix_path:
+            return None
 
         path = prefix_path
-        path.extend(main_path)
-        path.extend(suffix_path)
+        path.extend(main_path[1:])
+        path.extend(suffix_path[1:])
 
-        # debug remove all from graph except this path
-        show_path = True
+        # debug remove all from graph except this path: NO OTHER SEARCHES WILL BE POSSIBLE
+        show_path = False
         if show_path:
             graph = {}
             for i, n in enumerate(path):
@@ -1118,22 +1129,24 @@ class BehaviourTree:
         """
         :param tree: Root task
         """
-        self.root = None
+        self._root = None
         self.current = None
         # self.data_context = {}
         self.controller = entity_controller
 
-        # debug example
-        # sequence = Sequence(self.data_context,
-        # EntityMoveToLocation(entity_controller, (36, 7)),
-        # DebugPrint())
-        #
-        # self.root = Repeater(sequence, self.data_context)
+        self.set_root(tree)
 
-        self.root = tree
-        self.current = self.root
+    def set_root(self, node):
+        if self.current:
+            self.current.end()
+
+        self._root = node
+        self.current = self._root
 
         self.current.init()
+
+    def get_root(self):
+        return self._root
 
     def tick(self):
         # todo: don't traverse the tree each frame
@@ -1349,22 +1362,22 @@ class Repeater(Decorator):
         return Task.RUNNING
 
 
-class RepeatUntilFail(Decorator):
-    """
-    Repeats the child task until it fails
-    """
-
-    def process(self):
-        state = self.child.process()
-
-        # restart child on success
-        if state == Task.SUCCESS:
-            self.child.begin()
-            return Task.RUNNING
-
-        # failure and running
-        else:
-            return state
+# class RepeatUntilFail(Decorator):
+#     """
+#     Repeats the child task until it fails
+#     """
+#
+#     def process(self):
+#         state = self.child.process()
+#
+#         # restart child on success
+#         if state == Task.SUCCESS:
+#             self.child.init()
+#             return Task.RUNNING
+#
+#         # failure and running
+#         else:
+#             return state
 
 
 # leaf tasks/actions
@@ -1385,37 +1398,136 @@ class EntityLeafTask(LeafTask):
         return Task.SUCCESS if b else Task.FAILURE
 
 
-class EntityMoveToLocation(EntityLeafTask):
+class HumanWalkToLocation(EntityLeafTask):
     """
     Moves the child entity to the given location
     """
 
-    def __init__(self, controller, target_location):
-        """
-        :param target_location: Target tile location
-        """
+    def __init__(self, controller, target_tile):
         EntityLeafTask.__init__(self, controller)
-        self.target_location = util.tile_to_pixel(target_location)
-        self._size = self.entity.aabb.width
+
+        self._target_location = None
+        self.path = []
+
+        self._last_direction = None
+        self.set_target_tile(target_tile)
+
+    def set_target_tile(self, tile):
+        self._target_location = tile
+        self._last_direction = None
+
+    def _find_appropriate_target(self):
+        """
+        :return: Centre of target tile
+        """
+
+        x, y = self._target_location
+        x += constants.TILE_SIZE / 2
+        y += constants.TILE_SIZE / 2
+        return x, y
 
     def process(self):
-        dx, dy = self.target_location[0] - self.entity.aabb.x, self.target_location[1] - self.entity.aabb.y
+        target = self._find_appropriate_target()
 
-        # arrived
-        sqrd = util.distance_sqrd(self.entity.aabb.topleft, self.target_location)
-        if sqrd < self._size ** 2:
+        distance = util.distance(self.entity.rect.centre, target)
+        threshold = constants.DELTA * self.controller.get_speed() * 1.5
+
+        if distance <= threshold:
+            self.entity.move_entity_to_tile(util.pixel_to_tile(self._target_location))
             return Task.SUCCESS
 
-        # crashed? todo
-        # elif not self.vehicle.is_moving():
-        # return Task.FAILURE
+        # constants.LOGGER.debug("player tile %r : target tile %r distance %f" % (self.entity.get_current_tile(), util.pixel_to_tile(target), distance))
+        direction = constants.Direction.get_direction_between(self.entity.get_current_tile(), util.pixel_to_tile(target))
 
-        # get movement direction
-        direction = constants.Direction.delta_to_direction(dx, abs(dx) <= self._size)
+        if direction is None or (direction != self._last_direction and self._last_direction is not None):
+            return Task.RUNNING
 
-        # move
-        self.controller.move_in_direction(direction)
+        # constants.LOGGER.debug((util.get_enum_name(constants.Direction, direction), (self.entity.rect.position()), self.target_location))
+        self.controller.move_in_direction(direction, True)
+
         return Task.RUNNING
+
+
+class HumanFollowPath(Decorator):
+    def __init__(self, controller, path):
+        Decorator.__init__(self, HumanWalkToLocation(controller, None))
+        self._index = 0
+        self._path = []
+
+        add_tile = lambda t: self._path.append(util.tile_to_pixel(t))
+
+        for i in xrange(len(path) - 1):
+            t0 = path[i]
+            t1 = path[i + 1]
+
+            # adjacent
+            if util.find_difference(t0, t1, True) == [0, 1]:
+                add_tile(t0)
+
+            # interpolate between
+            else:
+                difference = util.find_difference(t1, t0, False)
+
+                # start with biggest first
+                for axis in (0, 1) if abs(difference[0]) >= abs(difference[1]) else (1, 0):
+                    diff = t1[axis] - t0[axis]
+
+                    if diff == 0:
+                        continue
+
+                    delta = diff / abs(diff)
+                    for j in xrange(abs(diff)):
+                        if axis == 0:
+                            next_tile = t0[0] + delta * j, t0[1]
+                        else:
+                            next_tile = t0[0], t0[1] + delta * j
+                        add_tile(next_tile)
+
+        if self._path[len(self._path) - 1] != path[len(path) - 1]:
+            add_tile(path[len(path) - 1])
+
+        self.child.set_target_tile(self._path[0])
+
+    def process(self):
+        state = self.child.process()
+
+        # next
+        if state != Task.RUNNING:
+            self._index += 1
+
+            # all done
+            if self._index >= len(self._path):
+                self.child.controller.halt()
+                return Task.SUCCESS
+
+            next_goal = self._path[self._index]
+            self.child.set_target_tile(next_goal)
+
+        return Task.RUNNING
+
+
+class HumanRoam(Decorator):
+    def __init__(self, controller):
+        Decorator.__init__(self, None)
+        self._controller = controller
+
+    def init(self):
+        current_tile = self._controller.entity.get_current_tile()
+        path = None
+        goal = None
+
+        while path is None:
+            goal = random.choice(self._controller.entity.world.nav_graph.graph.keys())
+            if goal == current_tile:
+                continue
+
+            path = self._controller.entity.world.nav_graph.find_walking_path(current_tile, goal)
+
+        self.child = HumanFollowPath(self._controller,
+                                     path)
+
+    def process(self):
+        return self.child.process()
 
 
 class EntityWander(EntityLeafTask):

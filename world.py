@@ -11,7 +11,6 @@ from building import Building
 import util
 from vec2d import Vec2d
 
-
 WORLDS = []
 
 
@@ -522,7 +521,7 @@ class BaseWorld:
         """
         self._transfer_to_buffer(entity, entity.world, self)
         if loc:
-            entity.move_entity(*loc)
+            entity.move_entity(loc)
 
     def get_spawn(self, index, entitytype):
         """
@@ -536,15 +535,27 @@ class BaseWorld:
         """
         return self.get_spawn(index, entitytype)[0:2]
 
-    def move_to_spawn(self, entity, index, vary=True):
+    def move_to_spawn(self, entity, index, vary=False):
         """
         :param index: Spawn index
         :param vary: Should the spawn position be fuzzed a bit
         """
         assert self == entity.world
         spawn = self.get_spawn(index, entity.entitytype)
-        pos = (spawn[0] + random.randrange(spawn[3]), spawn[1] + random.randrange(spawn[4])) if vary else spawn[:2]
-        entity.move_entity(*pos)
+        if vary:
+            pos = (spawn[0] + random.randrange(spawn[3]), spawn[1] + random.randrange(spawn[4]))
+            entity.move_entity(pos)
+
+        else:
+            tile_pos = util.pixel_to_tile(spawn[:2])
+
+            # y coordinate is always +1
+            tile_pos = tile_pos[0], tile_pos[1] - 1
+            spawn_size = util.pixel_to_tile(spawn[-2:])
+
+            tile = map(lambda (x, d): x + random.randrange(d), zip(tile_pos, spawn_size))
+            entity.move_entity_to_tile(tuple(tile))
+
         entity.turn(spawn[2])
 
     def spawn_entity_at_spawn(self, entity, spawn_index, vary=True):
@@ -562,6 +573,9 @@ class BaseWorld:
         :return: The loaded world
         """
         from xml.etree import ElementTree
+
+        constants.LOGGER.debug("Started loading world %s" % filename)
+        constants.LOGGER.push_level()
 
         tree = ElementTree.parse(util.search_for_file(filename, "res/world"))
         root = tree.getroot()
@@ -685,7 +699,8 @@ class BaseWorld:
         # finish up any other tasks
         world.post_load()
 
-        constants.LOGGER.debug("World loaded: [%s]" % filename)
+        constants.LOGGER.pop_level()
+        constants.LOGGER.debug("Successfully loaded world %s" % filename)
         return world
 
     def add_spawn(self, entitytype, x, y, o=None, w=None, h=None):
@@ -1217,7 +1232,7 @@ class _BlockHelper:
         if not Block.HELPER:
             Block.HELPER = _BlockHelper()
             Block.HELPER.load_tileset()
-            constants.LOGGER.info("Tileset loaded")
+            constants.LOGGER.info("Loaded tileset")
 
     def __init__(self):
         self.shared_blocks = {}

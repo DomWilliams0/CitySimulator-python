@@ -264,10 +264,13 @@ class OutsideWorldState(BaseGameState):
 
         # add some humans
         for _ in xrange(constants.CONFIG["game.humans.spawn-count"]):
-            entity.create_entity(self.world, constants.EntityType.HUMAN)
+            e = entity.create_entity(self.world, constants.EntityType.HUMAN)
+
+            if constants.CONFIG["game.humans.wandering"]:
+                e.controller.roam()
 
         # add some vehicles
-        for _ in xrange(5):
+        for _ in xrange(constants.CONFIG["game.vehicles.spawn-count"]):
             entity.create_entity(self.world, constants.EntityType.VEHICLE)
 
         # centre on a random entity
@@ -275,12 +278,6 @@ class OutsideWorldState(BaseGameState):
 
         # move mouse to centre
         pygame.mouse.set_pos(constants.WINDOW_CENTRE)
-
-        # debug path finding test
-        src = (25, 2)
-        dest = (55, 30)
-        path = self.world.nav_graph.find_walking_path(src, dest)
-        print("%r -> %r = %r" % (src, dest, path))
 
     def tick(self):
         BaseGameState.tick(self)

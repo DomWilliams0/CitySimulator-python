@@ -65,6 +65,11 @@ assert_equal(util.add_direction(source_pos, Direction.SOUTH, distance), [4, 7])
 assert_equal(util.add_direction(source_pos, Direction.WEST, distance), [1, 4])
 assert_equal(util.add_direction(source_pos, Direction.EAST, distance), [7, 4])
 
+assert_equal(Direction.get_direction_between((0, 0), (0, 5)), Direction.SOUTH)
+assert_equal(Direction.get_direction_between((0, 5), (0, 0)), Direction.NORTH)
+assert_equal(Direction.get_direction_between((0, 0), (5, 0)), Direction.EAST)
+assert_equal(Direction.get_direction_between((5, 0), (0, 0)), Direction.WEST)
+
 # expanding rectangles
 rect = util.Rect(5, 5, 20, 20)
 assert_equal(util.Rect(rect).expand(Direction.NORTH, 5).as_tuple(), (5, 0, 20, 25))

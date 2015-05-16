@@ -1,5 +1,6 @@
 import random
 from xml.etree import ElementTree
+import operator
 
 from pygame.sprite import Sprite
 from pygame.surface import Surface
@@ -118,7 +119,7 @@ class Entity(Sprite):
     def __init__(self, dimensions, world, entitytype, spritesheet=None, clone_spritesheet=False, loc=None, world_collisions=True, world_interactions=False, can_leave_world=False):
         """
         :param dimensions Dimensions of the sprite
-        :param loc Starting position, defaults to a random location in the world
+        :param loc Starting position
         :param world_collisions Whether or not this entity collides with the world
         :param can_leave_world Whether or not this entity is allowed to leave the world's boundaries
         :param spritesheet Spritesheet name, if left None a random one is chosen
@@ -182,6 +183,7 @@ class Entity(Sprite):
         """
         if self.visible:
             self.animator.tick()
+            # constants.SCREEN.draw_circle(self.aabb.bottomleft, colour=(255, 0, 0), radius=2)
             # constants.SCREEN.draw_rect(self.rect, filled=False)
             # constants.SCREEN.draw_rect(self.aabb, filled=False, colour=(0, 255, 0))
 
@@ -199,7 +201,7 @@ class Entity(Sprite):
 
         delta = self.velocity * constants.DELTA
         delta += self.aabb.centre
-        self.move_entity(*delta)
+        self.move_entity(delta)
 
         # collisions
         if self.world_collisions and self.collisions_enabled:
@@ -228,7 +230,7 @@ class Entity(Sprite):
 
             if dx != 0 or dy != 0:
                 c = self.aabb.centre
-                self.move_entity(c[0] + dx, c[1] + dy)
+                self.move_entity(map(operator.add, c, (dx, dy)))
 
         if self.world_interactions:
             self.handle_interactions()
@@ -268,7 +270,7 @@ class Entity(Sprite):
         """
         Moves positional rect to collision-corrected aabb
         """
-        self.rect.centre = self.aabb.centre
+        self.rect.centre = self.transform.as_tuple()
 
     def turn(self, direction):
         """
@@ -297,7 +299,7 @@ class Entity(Sprite):
         """
         :return: The current tile position
         """
-        return util.pixel_to_tile(self.transform)
+        return tuple(util.intify(util.pixel_to_tile(self.transform)))
 
     def is_obstructed(self, direction=None, distance=0.25):
         """
@@ -405,13 +407,25 @@ class Entity(Sprite):
     def handle_interactions(self):
         pass
 
-    def move_entity(self, x, y):
+    def move_entity(self, pixel_pos):
         """
-        Moves the entity to the given coordinates
+        PLaces the entity's centre at the given coordinates
         """
-        self.aabb.centre = x, y
-        self.transform.set((x, y))
+        self.aabb.centre = pixel_pos
+        self.transform.set(pixel_pos)
         self.catchup_aab()
+
+    def _centre_self(self, tile_pos):
+        """
+        :return: Pixel position of entity rect centred around the given tile
+        """
+        return util.tile_to_pixel(map(lambda x: x + 0.5, tile_pos))
+
+    def move_entity_to_tile(self, tile_pos):
+        """
+        Centres the entity in the given tile
+        """
+        self.move_entity(self._centre_self(tile_pos))
 
     @staticmethod
     def random_velocity(speed, no_zero=False):
@@ -461,6 +475,10 @@ class Human(Entity):
             self.interact_aabb.centre = self.aabb.centre
         except AttributeError:
             pass
+
+    def _centre_self(self, tile_pos):
+        centred = Entity._centre_self(self, tile_pos)
+        return centred[0], centred[1] + self.aabb.height / 2
 
     def handle_interactions(self):
         rects = self.world.get_colliding_blocks(self.interact_aabb, interactables=True)
@@ -635,7 +653,7 @@ class Vehicle(Entity):
         for human in self.passengers:
             if not human:
                 continue
-            human.move_entity(*self.transform)
+            human.move_entity(self.transform)
             human.direction = self.direction
 
     def _render_seat(self, horizontal, front_seat):
