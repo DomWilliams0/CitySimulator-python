@@ -212,7 +212,7 @@ class ConfigLoader:
 
                 # error in config, load default
                 else:
-                    LOGGER.error("Failed to load config. Reverting to default (%s)" % self._format_error(e))
+                    LOGGER.exception("Failed to load config. Reverting to default (%s)" % self._format_error(e))
                     return self._load(True)
 
             # couldn't load default config either

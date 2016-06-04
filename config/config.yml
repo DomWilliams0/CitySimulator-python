@@ -13,3 +13,7 @@ game:
 
   buildings:
     strobe-lights: true
+
+debug:
+    log-level: debug
+
